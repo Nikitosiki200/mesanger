@@ -1,98 +1,67 @@
-const socket = io();
+let myId = "";
 
-let peers = {};
-let localStream;
-let name, room;
+async function register() {
+  const login = document.getElementById("login").value;
+  const password = document.getElementById("password").value;
 
-const videoGrid = document.getElementById("videos");
-
-function join() {
-  name = nameInput.value;
-  room = roomInput.value;
-
-  socket.emit("join", {name, room});
-
-  login.style.display = "none";
-  document.querySelector(".app").style.display = "grid";
-}
-
-async function startCall() {
-  localStream = await navigator.mediaDevices.getUserMedia({
-    video: true,
-    audio: true
+  const res = await fetch("/register", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({login, password})
   });
 
-  localVideo.srcObject = localStream;
+  const data = await res.json();
+  alert(data.error || "Аккаунт создан");
 }
 
-async function shareScreen() {
-  const screen = await navigator.mediaDevices.getDisplayMedia({
-    video: true
+async function login() {
+  const login = document.getElementById("login").value;
+  const password = document.getElementById("password").value;
+
+  const res = await fetch("/login", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({login, password})
   });
 
-  localVideo.srcObject = screen;
+  const data = await res.json();
+
+  if (data.error) return alert(data.error);
+
+  myId = data.id;
+
+  document.querySelector(".center").style.display = "none";
+  document.getElementById("app").style.display = "block";
+
+  document.getElementById("me").innerText =
+    "Ты: " + data.login + " (" + data.id + ")";
 }
 
-function createPeer(id) {
-  const pc = new RTCPeerConnection({
-    iceServers: [
-      {urls: "stun:stun.l.google.com:19302"},
-      {
-        urls: "turn:openrelay.metered.ca:80",
-        username: "openrelayproject",
-        credential: "openrelayproject"
-      }
-    ]
-  });
+async function search() {
+  const q = document.getElementById("search").value;
 
-  localStream.getTracks().forEach(track => {
-    pc.addTrack(track, localStream);
-  });
+  const res = await fetch("/search/" + q);
+  const users = await res.json();
 
-  pc.ontrack = (e) => {
-    const video = document.createElement("video");
-    video.srcObject = e.streams[0];
-    video.autoplay = true;
-    videoGrid.appendChild(video);
-  };
+  const div = document.getElementById("results");
+  div.innerHTML = "";
 
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      socket.emit("signal", {to: id, data: e.candidate});
-    }
-  };
-
-  return pc;
-}
-
-socket.on("all-users", (users) => {
   users.forEach(u => {
-    const pc = createPeer(u.id);
-    peers[u.id] = pc;
+    div.innerHTML += `
+      <div>
+        ${u.login} (${u.id})
+        <button onclick="add('${u.id}')">+</button>
+      </div>
+    `;
   });
-});
+}
 
-socket.on("user-joined", ({id}) => {
-  const pc = createPeer(id);
-  peers[id] = pc;
-});
+async function add(id) {
+  await fetch("/add-friend", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({myId, friendId: id})
+  });
 
-socket.on("signal", async ({from, data}) => {
-  const pc = peers[from];
-
-  if (data.sdp) {
-    await pc.setRemoteDescription(data.sdp);
-
-    if (data.sdp.type === "offer") {
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socket.emit("signal", {
-        to: from,
-        data: pc.localDescription
-      });
-    }
-  } else {
-    await pc.addIceCandidate(data);
-  }
-});
+  alert("Добавлен");
+}
