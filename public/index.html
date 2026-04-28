@@ -1,31 +1,164 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="ru">
 <head>
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mesanger</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="authScreen" class="auth-screen">
+    <div class="auth-card glass">
+      <div class="brand">
+        <div class="brand-mark">M</div>
+        <div>
+          <div class="brand-title">Mesanger</div>
+          <div class="brand-sub">Чаты, группы, звонки</div>
+        </div>
+      </div>
 
-<div class="center">
-  <div class="card">
-    <h2>Мессенджер</h2>
+      <div class="segmented">
+        <button id="tabLogin" class="seg active">Вход</button>
+        <button id="tabRegister" class="seg">Регистрация</button>
+      </div>
 
-    <input id="login" placeholder="Логин">
-    <input id="password" type="password" placeholder="Пароль">
+      <div class="field">
+        <label>Логин</label>
+        <input id="authLogin" placeholder="nikitosiki" />
+      </div>
 
-    <button onclick="login()">Войти</button>
-    <button onclick="register()">Регистрация</button>
+      <div class="field" id="displayNameWrap" style="display:none;">
+        <label>Имя в профиле</label>
+        <input id="authDisplayName" placeholder="Никнейм" />
+      </div>
+
+      <div class="field">
+        <label>Пароль</label>
+        <input id="authPassword" type="password" placeholder="••••••••" />
+      </div>
+
+      <button id="authMainBtn" class="primary-btn">Войти</button>
+      <button id="authAltBtn" class="ghost-btn">Создать аккаунт</button>
+      <div id="authError" class="error-text"></div>
+    </div>
   </div>
-</div>
 
-<div id="app" style="display:none;">
-  <h3 id="me"></h3>
+  <div id="app" class="app hidden">
+    <aside class="rail glass">
+      <button class="rail-btn active" data-tab="chats">💬</button>
+      <button class="rail-btn" data-tab="find">🔎</button>
+      <button class="rail-btn" data-tab="groups">👥</button>
+      <button class="rail-btn" data-tab="settings">⚙️</button>
+      <div class="rail-spacer"></div>
+      <button id="logoutBtn" class="rail-btn danger">↩</button>
+    </aside>
 
-  <input id="search" placeholder="Поиск">
-  <button onclick="search()">Найти</button>
+    <aside class="list-panel glass">
+      <div class="panel-top">
+        <div>
+          <div id="meName" class="panel-title">Профиль</div>
+          <div id="meInfo" class="panel-sub">—</div>
+        </div>
+      </div>
 
-  <div id="results"></div>
-</div>
+      <div id="tabChats" class="tab-view active">
+        <div class="section-head">Чаты</div>
+        <div id="chatList" class="list"></div>
+      </div>
 
-<script src="app.js"></script>
+      <div id="tabFind" class="tab-view">
+        <div class="section-head">Найти друзей</div>
+        <div class="inline">
+          <input id="findInput" placeholder="Логин или ID" />
+          <button id="findBtn" class="small-btn">Найти</button>
+        </div>
+        <div id="findResults" class="list"></div>
+      </div>
+
+      <div id="tabGroups" class="tab-view">
+        <div class="section-head">Группы</div>
+        <div class="inline">
+          <input id="groupNameInput" placeholder="Название группы" />
+          <button id="createGroupBtn" class="small-btn">Создать</button>
+        </div>
+        <div class="section-mini">Ваши группы</div>
+        <div id="groupList" class="list"></div>
+        <div class="section-mini">Пригласить в текущую группу</div>
+        <div class="inline">
+          <input id="inviteInput" placeholder="Логин или ID" />
+          <button id="inviteBtn" class="small-btn">Добавить</button>
+        </div>
+      </div>
+
+      <div id="tabSettings" class="tab-view">
+        <div class="section-head">Настройки</div>
+        <div class="field compact">
+          <label>Имя профиля</label>
+          <input id="setDisplayName" />
+        </div>
+        <div class="field compact">
+          <label>Акцент</label>
+          <select id="setAccent">
+            <option value="indigo">Indigo</option>
+            <option value="pink">Pink</option>
+            <option value="cyan">Cyan</option>
+            <option value="lime">Lime</option>
+            <option value="orange">Orange</option>
+          </select>
+        </div>
+        <div class="field compact">
+          <label>Тема</label>
+          <select id="setTheme">
+            <option value="dark">Тёмная</option>
+            <option value="midnight">Midnight</option>
+          </select>
+        </div>
+        <label class="toggle">
+          <input id="setCompact" type="checkbox" />
+          <span>Компактный режим</span>
+        </label>
+        <button id="saveSettingsBtn" class="primary-btn full">Сохранить</button>
+      </div>
+    </aside>
+
+    <main class="chat-panel glass">
+      <header class="chat-top">
+        <div>
+          <div id="chatTitle" class="chat-title">Выбери чат</div>
+          <div id="chatSub" class="chat-sub">Слева открой диалог, группу или поиск друзей</div>
+        </div>
+        <div class="chat-actions">
+          <button id="voiceCallBtn" class="icon-btn">🎙</button>
+          <button id="videoCallBtn" class="icon-btn">📹</button>
+          <button id="screenBtn" class="icon-btn">🖥</button>
+          <button id="hangupBtn" class="icon-btn danger">✕</button>
+        </div>
+      </header>
+
+      <section id="messages" class="messages"></section>
+
+      <footer class="composer">
+        <input id="messageInput" placeholder="Написать сообщение..." />
+        <button id="sendBtn" class="primary-btn">Отправить</button>
+      </footer>
+    </main>
+
+    <aside class="side-panel glass">
+      <div class="section-head">Участники</div>
+      <div id="members" class="members"></div>
+
+      <div class="section-head" style="margin-top:16px;">Видео</div>
+      <div class="video-stack">
+        <div class="video-card">
+          <div class="video-label">Ты</div>
+          <video id="localVideo" autoplay muted playsinline></video>
+        </div>
+        <div id="remoteVideos" class="remote-grid"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
