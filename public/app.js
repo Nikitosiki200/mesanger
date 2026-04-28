@@ -14,6 +14,7 @@ const state = {
   notificationAllowed: false,
   currentCall: null,
   incomingCall: null,
+  activeVideoTrack: null,
   ringtone: null
 };
 
@@ -82,6 +83,14 @@ function api(path, options = {}) {
   if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
   return fetch(path, { ...options, headers });
 }
+
+function getOutgoingVideoTrack() {
+  return state.screenStream?.getVideoTracks?.()[0]
+    || state.activeVideoTrack
+    || state.localStream?.getVideoTracks?.()[0]
+    || null;
+}
+
 
 function setAccent(accent) {
   const map = {
@@ -265,7 +274,12 @@ function renderGroups() {
 }
 
 async function openConversation(c) {
-  if (state.current) {
+  const sameChat =
+    state.current &&
+    state.current.type === c.type &&
+    state.current.id === c.id;
+
+  if (state.current && !sameChat) {
     try { socketEmit("leave-chat", state.current); } catch {}
     stopCall(true);
   }
@@ -279,12 +293,15 @@ async function openConversation(c) {
     ? c.subtitle
     : `Групповой чат · ${c.subtitle || ""}`;
 
+  socketEmit("join-chat", c);
+
   el.callStage.classList.add("hidden");
+  el.messages.style.display = "";
+
   await loadMessages();
   await loadMembers();
-
-  socketEmit("join-chat", c);
 }
+
 
 async function loadMessages() {
   if (!state.current) return;
@@ -329,13 +346,14 @@ async function sendMessage() {
     text
   });
 
-  if (state.current.type === "dm" && state.current.peer) {
-    socketEmit("dm:ensure", { query: state.current.peer.id });
+  if (state.current.type === "dm") {
+    socketEmit("dm:ensure", { query: state.current.peer?.id || state.current.id });
   }
 
   el.messageInput.value = "";
   autoGrowTextarea();
 }
+
 
 async function searchUsers() {
   const q = el.findInput.value.trim();
@@ -562,6 +580,13 @@ function connectSocket() {
     }
   });
 
+  state.socket.on("call:request:ok", ({ callId }) => {
+  if (state.currentCall) {
+    state.currentCall.callId = callId;
+  }
+});
+
+
   state.socket.on("presence:update", (user) => {
     if (state.me && user.id === state.me.id) {
       state.me.online = user.online;
@@ -638,6 +663,12 @@ async function ensureMedia(kind) {
     state.localStream.getTracks().forEach((t) => t.stop());
   }
 
+  const videoTrack = getOutgoingVideoTrack();
+   if (videoTrack) {
+    pc.addTrack(videoTrack, state.localStream || new MediaStream([videoTrack]));
+  }
+
+
   const constraints = kind === "video"
     ? { audio: true, video: true }
     : { audio: true, video: false };
@@ -672,6 +703,7 @@ async function startCall(kind) {
 
   el.callSub.textContent = "Идёт вызов...";
   updateCallButtons();
+
   socketEmit("call:request", {
     type: state.current.type,
     id: state.current.id,
@@ -684,6 +716,7 @@ async function startCall(kind) {
     callId: null
   });
 }
+
 
 function updateCallButtons() {
   const camTrack = state.localStream?.getVideoTracks?.()[0];
@@ -819,16 +852,19 @@ async function toggleScreen() {
     return;
   }
 
-  if (!navigator.mediaDevices.getDisplayMedia) {
-    alert("Этот браузер не поддерживает демонстрацию экрана");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    alert("Этот браузер на телефоне не поддерживает демонстрацию экрана. На Android Chrome иногда работает, а на iPhone Safari — обычно нет.");
     return;
   }
 
   try {
     const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
     state.screenStream = screen;
+
     const screenTrack = screen.getVideoTracks()[0];
+    state.activeVideoTrack = screenTrack;
     el.localVideo.srcObject = screen;
+
     replaceOutgoingVideoTrack(screenTrack);
 
     screenTrack.onended = () => {
@@ -843,6 +879,8 @@ async function toggleScreen() {
 }
 
 function replaceOutgoingVideoTrack(track) {
+  state.activeVideoTrack = track;
+
   Object.values(state.peers).forEach((pc) => {
     const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
     if (sender) sender.replaceTrack(track);
@@ -851,17 +889,22 @@ function replaceOutgoingVideoTrack(track) {
 
 function restoreCameraTrack() {
   if (!state.localStream) return;
+
   const camera = state.localStream.getVideoTracks()[0];
   if (camera) {
+    state.activeVideoTrack = camera;
     replaceOutgoingVideoTrack(camera);
     el.localVideo.srcObject = state.localStream;
   }
+
   if (state.screenStream) {
     state.screenStream.getTracks().forEach((t) => t.stop());
     state.screenStream = null;
   }
+
   updateCallButtons();
 }
+
 
 async function toggleCamera() {
   if (!state.currentCall) return;
@@ -894,11 +937,16 @@ async function toggleCamera() {
 
 function toggleMic() {
   if (!state.currentCall || !state.localStream) return;
-  const audioTracks = state.localStream.getAudioTracks();
-  if (!audioTracks.length) return;
-  audioTracks[0].enabled = !audioTracks[0].enabled;
-  updateCallButtons();
+  const videoTrack = getOutgoingVideoTrack();
+if (videoTrack) {
+  pc.addTrack(videoTrack, state.localStream || new MediaStream([videoTrack]));
 }
+
+   const audioTracks = state.localStream ? state.localStream.getAudioTracks() : [];
+    audioTracks.forEach((track) => {
+    pc.addTrack(track, state.localStream);
+  });
+
 
 async function createPeer(remoteId, initiator) {
   if (state.peers[remoteId]) return state.peers[remoteId];
