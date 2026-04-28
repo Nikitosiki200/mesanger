@@ -1,44 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Messenger</title>
-  <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div id="login">
-  <input id="name" placeholder="Имя">
-  <input id="room" placeholder="Комната">
-  <button onclick="join()">Войти</button>
-</div>
+<div class="center">
+  <div class="card">
+    <h2>Мессенджер</h2>
 
-<div class="app" style="display:none;">
-  <div class="sidebar">
-    <h3>👥 Онлайн</h3>
-    <div id="users"></div>
-  </div>
+    <input id="login" placeholder="Логин">
+    <input id="password" type="password" placeholder="Пароль">
 
-  <div class="chat">
-    <div class="topbar">
-      <button onclick="startCall()">📞</button>
-      <button onclick="shareScreen()">🖥</button>
-    </div>
-
-    <div class="video-grid" id="videos">
-      <video id="localVideo" autoplay muted></video>
-    </div>
-
-    <div class="messages" id="messages"></div>
-
-    <div class="input">
-      <input id="msg">
-      <button onclick="send()">➤</button>
-    </div>
+    <button onclick="login()">Войти</button>
+    <button onclick="register()">Регистрация</button>
   </div>
 </div>
 
-<script src="/socket.io/socket.io.js"></script>
+<div id="app" style="display:none;">
+  <h3 id="me"></h3>
+
+  <input id="search" placeholder="Поиск">
+  <button onclick="search()">Найти</button>
+
+  <div id="results"></div>
+</div>
+
 <script src="app.js"></script>
-
 </body>
 </html>
