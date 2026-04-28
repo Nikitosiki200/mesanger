@@ -23,6 +23,8 @@ const EMPTY_DB = {
 
 let db = structuredClone(EMPTY_DB);
 const connectionCounts = new Map();
+const userSockets = new Map();
+const pendingCalls = new Map();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
@@ -45,6 +47,10 @@ function makeId5() {
 
 function makeToken() {
   return crypto.randomBytes(24).toString("hex");
+}
+
+function makeCallId() {
+  return crypto.randomBytes(8).toString("hex");
 }
 
 function publicUser(u) {
@@ -108,6 +114,22 @@ function touchUser(userId, online = true) {
   return user;
 }
 
+function broadcastPresence(user) {
+  io.emit("presence:update", publicUser(user));
+}
+
+function emitToUser(userId, event, payload) {
+  const sockets = userSockets.get(userId);
+  if (!sockets) return;
+  for (const socketId of sockets) {
+    io.to(socketId).emit(event, payload);
+  }
+}
+
+function refreshFriends(userId) {
+  emitToUser(userId, "friends:refresh", {});
+}
+
 function ensureFriendship(a, b) {
   if (!a || !b || a === b) return false;
 
@@ -153,7 +175,7 @@ function getGroupsFor(userId) {
       id: g.id,
       type: "group",
       title: g.name,
-      membersCount: db.groupMembers.filter((m) => m.groupId === g.id).length,
+      subtitle: `${db.groupMembers.filter((m) => m.groupId === g.id).length} участников`,
       ownerId: g.ownerId
     }));
 }
@@ -172,12 +194,26 @@ function getConversations(userId) {
     id: g.id,
     type: "group",
     title: g.title,
-    subtitle: `${g.membersCount} участников`,
+    subtitle: `${g.subtitle}`,
     avatar: "#",
     peer: null
   }));
 
   return [...friends, ...groups];
+}
+
+function getChannelTargets(userId, type, id) {
+  if (type === "dm") {
+    const [a, b] = id.split("_");
+    const otherId = a === userId ? b : a;
+    return otherId ? [otherId] : [];
+  }
+  if (type === "group") {
+    return db.groupMembers
+      .filter((m) => m.groupId === id && m.userId !== userId)
+      .map((m) => m.userId);
+  }
+  return [];
 }
 
 async function loadDb() {
@@ -229,9 +265,275 @@ function messagePayload(m) {
   };
 }
 
-function broadcastPresence(user) {
-  io.emit("presence:update", publicUser(user));
+function callMemberPayload(socket) {
+  const u = db.users.find((x) => x.id === socket.data.userId);
+  return {
+    id: socket.id,
+    userId: socket.data.userId,
+    login: socket.data.login,
+    displayName: u ? (u.displayName || u.login) : socket.data.login
+  };
 }
+
+function getCallPeers(roomSockets, callerSocketId) {
+  return roomSockets
+    .filter((s) => s.id !== callerSocketId)
+    .map((s) => {
+      const u = db.users.find((x) => x.id === s.data.userId);
+      return {
+        id: s.id,
+        userId: s.data.userId,
+        login: s.data.login,
+        displayName: u ? (u.displayName || u.login) : s.data.login
+      };
+    });
+}
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  const session = db.sessions.find((s) => s.token === token);
+  if (!session) return next(new Error("unauthorized"));
+  const user = db.users.find((u) => u.id === session.userId);
+  if (!user) return next(new Error("unauthorized"));
+  socket.data.userId = user.id;
+  socket.data.login = user.login;
+  next();
+});
+
+io.on("connection", (socket) => {
+  const userId = socket.data.userId;
+  const user = db.users.find((u) => u.id === userId);
+
+  if (user) {
+    connectionCounts.set(userId, (connectionCounts.get(userId) || 0) + 1);
+    if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+    userSockets.get(userId).add(socket.id);
+    touchUser(userId, true);
+    broadcastPresence(user);
+  }
+
+  socket.on("presence:ping", async () => {
+    const u = touchUser(userId, true);
+    if (u) {
+      await saveDb();
+      broadcastPresence(u);
+    }
+  });
+
+  socket.on("join-chat", ({ type, id }) => {
+    if (!canAccessChannel(userId, type, id)) return;
+    socket.join(channelRoom(type, id));
+  });
+
+  socket.on("leave-chat", ({ type, id }) => {
+    socket.leave(channelRoom(type, id));
+  });
+
+  socket.on("message:send", async ({ type, id, text }) => {
+    const clean = String(text || "").trim();
+    if (!clean) return;
+    if (!canAccessChannel(userId, type, id)) return;
+
+    if (type === "dm") {
+      const [a, b] = id.split("_");
+      const otherId = a === userId ? b : a;
+      const other = db.users.find((u) => u.id === otherId);
+      if (other) {
+        const changed = ensureFriendship(userId, other.id);
+        if (changed) {
+          await saveDb();
+          refreshFriends(userId);
+          refreshFriends(other.id);
+        }
+      }
+    }
+
+    const msg = storeMessage(type, id, userId, clean);
+    await saveDb();
+
+    io.to(channelRoom(type, id)).emit("message:new", messagePayload(msg));
+
+    if (type === "dm") {
+      const targets = getChannelTargets(userId, type, id);
+      for (const targetId of targets) {
+        emitToUser(targetId, "friends:refresh", {});
+        emitToUser(targetId, "message:incoming", messagePayload(msg));
+      }
+    }
+  });
+
+  socket.on("dm:ensure", async ({ query }) => {
+    const q = String(query || "").trim().toLowerCase();
+    const target = db.users.find(
+      (u) => u.id.toLowerCase() === q || u.login.toLowerCase() === q
+    );
+    if (!target || target.id === userId) return;
+
+    const changed = ensureFriendship(userId, target.id);
+    if (changed) {
+      await saveDb();
+      refreshFriends(userId);
+      refreshFriends(target.id);
+    }
+  });
+
+  socket.on("call:request", async ({ type, id, kind }) => {
+    if (!canAccessChannel(userId, type, id)) return;
+
+    const callId = makeCallId();
+    const targets = getChannelTargets(userId, type, id);
+
+    pendingCalls.set(callId, {
+      callId,
+      type,
+      id,
+      kind,
+      callerId: userId,
+      callerSocketId: socket.id,
+      targets,
+      createdAt: Date.now()
+    });
+
+    const callerUser = db.users.find((u) => u.id === userId);
+    const callerPayload = callerUser ? publicUser(callerUser) : { id: userId, login: socket.data.login, displayName: socket.data.login };
+
+    for (const targetId of targets) {
+      emitToUser(targetId, "call:incoming", {
+        callId,
+        type,
+        id,
+        kind,
+        caller: callerPayload
+      });
+    }
+
+    socket.emit("call:request:ok", { callId });
+  });
+
+  socket.on("call:accept", ({ callId }) => {
+    const call = pendingCalls.get(callId);
+    if (!call) return;
+
+    const callerUser = db.users.find((u) => u.id === call.callerId);
+    const me = db.users.find((u) => u.id === userId);
+
+    if (callerUser) {
+      emitToUser(call.callerId, "call:accepted", {
+        callId,
+        type: call.type,
+        id: call.id,
+        by: me ? publicUser(me) : { id: userId, login: socket.data.login, displayName: socket.data.login }
+      });
+    }
+  });
+
+  socket.on("call:reject", ({ callId }) => {
+    const call = pendingCalls.get(callId);
+    if (!call) return;
+
+    const callerUser = db.users.find((u) => u.id === call.callerId);
+    const me = db.users.find((u) => u.id === userId);
+
+    if (callerUser) {
+      emitToUser(call.callerId, "call:rejected", {
+        callId,
+        type: call.type,
+        id: call.id,
+        by: me ? publicUser(me) : { id: userId, login: socket.data.login, displayName: socket.data.login }
+      });
+    }
+  });
+
+  socket.on("call:join", async ({ type, id, callId }) => {
+    if (!canAccessChannel(userId, type, id)) return;
+
+    const room = callRoom(type, id);
+    socket.join(room);
+
+    const peers = await io.in(room).fetchSockets();
+    const members = getCallPeers(peers, socket.id);
+
+    socket.emit("call:members", {
+      type,
+      id,
+      callId: callId || null,
+      members
+    });
+
+    socket.to(room).emit("call:user-joined", {
+      id: socket.id,
+      userId,
+      login: socket.data.login,
+      displayName: user ? (user.displayName || user.login) : socket.data.login
+    });
+  });
+
+  socket.on("call:leave", ({ type, id }) => {
+    const room = callRoom(type, id);
+    socket.leave(room);
+    socket.to(room).emit("call:user-left", {
+      id: socket.id,
+      userId
+    });
+  });
+
+  socket.on("call:signal", ({ to, data }) => {
+    io.to(to).emit("call:signal", {
+      from: socket.id,
+      data
+    });
+  });
+
+  socket.on("disconnect", async () => {
+    const current = connectionCounts.get(userId) || 0;
+    const next = Math.max(0, current - 1);
+
+    if (next <= 0) connectionCounts.delete(userId);
+    else connectionCounts.set(userId, next);
+
+    const sockets = userSockets.get(userId);
+    if (sockets) {
+      sockets.delete(socket.id);
+      if (sockets.size === 0) userSockets.delete(userId);
+    }
+
+    const u = db.users.find((x) => x.id === userId);
+    if (u) {
+      u.lastSeen = Date.now();
+      if ((connectionCounts.get(userId) || 0) === 0) {
+        u.online = false;
+      }
+      await saveDb();
+      broadcastPresence(u);
+    }
+
+    for (const room of socket.rooms) {
+      if (room.startsWith("call:")) {
+        socket.to(room).emit("call:user-left", {
+          id: socket.id,
+          userId
+        });
+      }
+    }
+  });
+});
+
+setInterval(async () => {
+  const now = Date.now();
+  let changed = false;
+
+  for (const user of db.users) {
+    if (user.online && now - (user.lastSeen || 0) > 3 * 60 * 1000) {
+      user.online = false;
+      changed = true;
+      broadcastPresence(user);
+    }
+  }
+
+  if (changed) {
+    await saveDb();
+  }
+}, 30000);
 
 app.post("/api/register", async (req, res) => {
   const { login, password, displayName } = req.body || {};
@@ -342,16 +644,18 @@ app.post("/api/dm", async (req, res) => {
   if (!q) return res.status(400).json({ error: "Введите логин или ID" });
 
   const target = db.users.find(
-    (u) =>
-      u.id.toLowerCase() === q ||
-      u.login.toLowerCase() === q
+    (u) => u.id.toLowerCase() === q || u.login.toLowerCase() === q
   );
 
   if (!target) return res.status(404).json({ error: "Пользователь не найден" });
   if (target.id === user.id) return res.status(400).json({ error: "Нельзя открыть чат с собой" });
 
-  const added = ensureFriendship(user.id, target.id);
-  if (added) await saveDb();
+  const changed = ensureFriendship(user.id, target.id);
+  if (changed) {
+    await saveDb();
+    refreshFriends(user.id);
+    refreshFriends(target.id);
+  }
 
   const dmId = pairKey(user.id, target.id);
 
@@ -371,16 +675,18 @@ app.post("/api/friends/add", async (req, res) => {
   if (!q) return res.status(400).json({ error: "Введите логин или ID" });
 
   const target = db.users.find(
-    (u) =>
-      u.id.toLowerCase() === q ||
-      u.login.toLowerCase() === q
+    (u) => u.id.toLowerCase() === q || u.login.toLowerCase() === q
   );
 
   if (!target) return res.status(404).json({ error: "Пользователь не найден" });
   if (target.id === user.id) return res.status(400).json({ error: "Нельзя добавить себя" });
 
-  const added = ensureFriendship(user.id, target.id);
-  if (added) await saveDb();
+  const changed = ensureFriendship(user.id, target.id);
+  if (changed) {
+    await saveDb();
+    refreshFriends(user.id);
+    refreshFriends(target.id);
+  }
 
   res.json({
     ok: true,
@@ -489,138 +795,6 @@ app.get("/api/messages", (req, res) => {
 
   res.json({ messages });
 });
-
-io.use((socket, next) => {
-  const token = socket.handshake.auth?.token;
-  const session = db.sessions.find((s) => s.token === token);
-  if (!session) return next(new Error("unauthorized"));
-  const user = db.users.find((u) => u.id === session.userId);
-  if (!user) return next(new Error("unauthorized"));
-  socket.data.userId = user.id;
-  socket.data.login = user.login;
-  next();
-});
-
-io.on("connection", (socket) => {
-  const userId = socket.data.userId;
-  const user = db.users.find((u) => u.id === userId);
-  if (user) {
-    connectionCounts.set(userId, (connectionCounts.get(userId) || 0) + 1);
-    touchUser(userId, true);
-    broadcastPresence(user);
-  }
-
-  socket.on("presence:ping", async () => {
-    const u = touchUser(userId, true);
-    if (u) {
-      await saveDb();
-      broadcastPresence(u);
-    }
-  });
-
-  socket.on("join-chat", ({ type, id }) => {
-    if (!canAccessChannel(userId, type, id)) return;
-    socket.join(channelRoom(type, id));
-  });
-
-  socket.on("leave-chat", ({ type, id }) => {
-    socket.leave(channelRoom(type, id));
-  });
-
-  socket.on("message:send", async ({ type, id, text }) => {
-    const clean = String(text || "").trim();
-    if (!clean) return;
-    if (!canAccessChannel(userId, type, id)) return;
-
-    if (type === "dm") {
-      const [a, b] = id.split("_");
-      const otherId = a === userId ? b : a;
-      const other = db.users.find((u) => u.id === otherId);
-      if (other) {
-        const changed = ensureFriendship(userId, other.id);
-        if (changed) await saveDb();
-      }
-    }
-
-    const msg = storeMessage(type, id, userId, clean);
-    await saveDb();
-
-    io.to(channelRoom(type, id)).emit("message:new", messagePayload(msg));
-  });
-
-  socket.on("call:join", async ({ type, id }) => {
-    if (!canAccessChannel(userId, type, id)) return;
-
-    const room = callRoom(type, id);
-    socket.join(room);
-
-    const peers = await io.in(room).fetchSockets();
-    const members = peers
-      .filter((s) => s.id !== socket.id)
-      .map((s) => ({
-        id: s.id,
-        login: s.data.login
-      }));
-
-    socket.emit("call:members", { type, id, members });
-    socket.to(room).emit("call:user-joined", {
-      id: socket.id,
-      login: socket.data.login
-    });
-  });
-
-  socket.on("call:leave", ({ type, id }) => {
-    const room = callRoom(type, id);
-    socket.leave(room);
-    socket.to(room).emit("call:user-left", { id: socket.id });
-  });
-
-  socket.on("call:signal", ({ to, data }) => {
-    io.to(to).emit("call:signal", {
-      from: socket.id,
-      data
-    });
-  });
-
-  socket.on("disconnect", async () => {
-    const count = Math.max(0, (connectionCounts.get(userId) || 1) - 1);
-    if (count <= 0) connectionCounts.delete(userId);
-    else connectionCounts.set(userId, count);
-
-    const u = db.users.find((x) => x.id === userId);
-    if (u) {
-      u.lastSeen = Date.now();
-      if ((connectionCounts.get(userId) || 0) === 0) {
-        u.online = false;
-      }
-      await saveDb();
-      broadcastPresence(u);
-    }
-
-    for (const room of socket.rooms) {
-      if (room.startsWith("call:")) {
-        socket.to(room).emit("call:user-left", { id: socket.id });
-      }
-    }
-  });
-});
-
-setInterval(async () => {
-  const now = Date.now();
-  let changed = false;
-
-  for (const user of db.users) {
-    if (user.online && now - (user.lastSeen || 0) > 3 * 60 * 1000) {
-      user.online = false;
-      changed = true;
-      broadcastPresence(user);
-    }
-  }
-
-  if (changed) {
-    await saveDb();
-  }
-}, 30000);
 
 (async () => {
   await loadDb();
