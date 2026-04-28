@@ -1,63 +1,111 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const { Low } = require("lowdb");
+const { JSONFile } = require("lowdb/node");
+const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+app.use(express.json());
 app.use(express.static("public"));
 
-let users = {};
+// база
+const db = new Low(new JSONFile("db.json"), { users: [] });
 
-io.on("connection", (socket) => {
+async function initDB() {
+  await db.read();
+  db.data ||= { users: [] };
+}
+initDB();
 
-  socket.on("join", ({name, room}) => {
-    socket.join(room);
-    users[socket.id] = {name, room};
 
-    const roomUsers = Object.entries(users)
-      .filter(([id, u]) => u.room === room)
-      .map(([id, u]) => ({id, name: u.name}));
+// 🔐 РЕГИСТРАЦИЯ
+app.post("/register", async (req, res) => {
+  const { login, password } = req.body;
 
-    socket.emit("all-users", roomUsers);
-    socket.to(room).emit("user-joined", {id: socket.id, name});
+  if (!login || !password) {
+    return res.json({ error: "Заполни все поля" });
+  }
 
-    io.to(room).emit("users", roomUsers);
+  await db.read();
+
+  const exists = db.data.users.find(u => u.login === login);
+  if (exists) {
+    return res.json({ error: "Логин занят" });
+  }
+
+  const user = {
+    id: uuidv4(),
+    login,
+    password,
+    friends: []
+  };
+
+  db.data.users.push(user);
+  await db.write();
+
+  res.json({ success: true });
+});
+
+
+// 🔓 ВХОД
+app.post("/login", async (req, res) => {
+  const { login, password } = req.body;
+
+  await db.read();
+
+  const user = db.data.users.find(
+    u => u.login === login && u.password === password
+  );
+
+  if (!user) {
+    return res.json({ error: "Неверные данные" });
+  }
+
+  res.json({
+    id: user.id,
+    login: user.login
   });
+});
 
-  socket.on("signal", ({to, data}) => {
-    io.to(to).emit("signal", {
-      from: socket.id,
-      data
-    });
-  });
 
-  socket.on("message", (msg) => {
-    const user = users[socket.id];
-    if (user) {
-      io.to(user.room).emit("message", {
-        name: user.name,
-        text: msg
-      });
-    }
-  });
+// 🔎 ПОИСК
+app.get("/search/:query", async (req, res) => {
+  await db.read();
 
-  socket.on("disconnect", () => {
-    const user = users[socket.id];
-    if (!user) return;
+  const q = req.params.query.toLowerCase();
 
-    delete users[socket.id];
+  const result = db.data.users.filter(
+    u => u.login.toLowerCase().includes(q) || u.id === q
+  );
 
-    socket.to(user.room).emit("user-left", socket.id);
+  res.json(result);
+});
 
-    const roomUsers = Object.entries(users)
-      .filter(([id, u]) => u.room === user.room)
-      .map(([id, u]) => ({id, name: u.name}));
 
-    io.to(user.room).emit("users", roomUsers);
-  });
+// ➕ ДОБАВИТЬ В ДРУЗЬЯ
+app.post("/add-friend", async (req, res) => {
+  const { myId, friendId } = req.body;
 
+  await db.read();
+
+  const me = db.data.users.find(u => u.id === myId);
+  const friend = db.data.users.find(u => u.id === friendId);
+
+  if (!me || !friend) {
+    return res.json({ error: "Ошибка" });
+  }
+
+  if (!me.friends.includes(friendId)) {
+    me.friends.push(friendId);
+  }
+
+  await db.write();
+
+  res.json({ success: true });
 });
 
 server.listen(3000, () => console.log("Server started"));
