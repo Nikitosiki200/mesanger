@@ -11,7 +11,6 @@
   --danger:#ef4444;
   --control:rgba(255,255,255,.06);
   --shadow:0 20px 60px rgba(0,0,0,.35);
-  --radius:22px;
 }
 
 html[data-theme="dark"]{
@@ -53,8 +52,8 @@ html[data-theme="violet"]{
 html[data-theme="light"]{
   --bg:#edf2ff;
   --bg2:#f8fbff;
-  --panel:rgba(255,255,255,.78);
-  --panel2:rgba(255,255,255,.9);
+  --panel:rgba(255,255,255,.82);
+  --panel2:rgba(255,255,255,.92);
   --text:#0f172a;
   --muted:#475569;
   --control:rgba(15,23,42,.06);
@@ -150,6 +149,13 @@ input:focus,select:focus,textarea:focus{
   border-color:rgba(102,119,255,.55);
   box-shadow:0 0 0 4px rgba(102,119,255,.12);
 }
+textarea{
+  resize:none;
+  min-height:52px;
+  max-height:160px;
+  line-height:1.35;
+}
+
 select option{
   color:#111827;
   background:#fff;
@@ -180,12 +186,12 @@ select option{
 .app{
   height:100%;
   display:grid;
-  grid-template-columns:74px 300px minmax(0,1fr) 280px;
+  grid-template-columns:74px 300px minmax(0,1fr);
   gap:14px;
   padding:14px;
 }
 
-.rail,.list-panel,.chat-panel,.side-panel{
+.rail,.list-panel,.chat-panel{
   border-radius:26px;
   overflow:hidden;
 }
@@ -205,7 +211,7 @@ select option{
 }
 .rail-spacer{flex:1}
 
-.list-panel,.chat-panel,.side-panel{
+.list-panel,.chat-panel{
   display:flex;
   flex-direction:column;
   min-width:0;
@@ -373,6 +379,13 @@ video{
   color:#fff;
 }
 
+.call-controls{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-top:12px;
+}
+
 .messages{
   flex:1;
   overflow:auto;
@@ -414,12 +427,6 @@ html[data-theme="light"] .msg{
   padding:14px;
   border-top:1px solid var(--border);
 }
-.composer textarea{
-  min-height:52px;
-  max-height:160px;
-  resize:none;
-  line-height:1.35;
-}
 .send-btn{
   min-height:52px;
   padding:0 18px;
@@ -449,19 +456,37 @@ html[data-theme="light"] .msg{
   animation:none;
 }
 
-.side-panel{
-  padding:14px;
-  overflow:auto;
+/* modal звонка */
+.modal{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.5);
+  display:grid;
+  place-items:center;
+  padding:18px;
+  z-index:999;
 }
-
-.toggle{
-  display:flex;
-  align-items:center;
+.modal-card{
+  width:min(420px,100%);
+  padding:24px;
+  border-radius:26px;
+  text-align:center;
+}
+.modal-title{
+  font-size:22px;
+  font-weight:800;
+}
+.modal-text{
+  margin-top:10px;
+  color:var(--muted);
+  line-height:1.4;
+}
+.modal-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
   gap:10px;
-  padding:12px 0;
-  color:var(--text);
+  margin-top:18px;
 }
-.toggle input{width:auto}
 
 @keyframes pop{
   from{opacity:0;transform:scale(.96)}
@@ -506,10 +531,6 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb{
     min-height:100%;
     grid-template-columns:74px 260px minmax(0,1fr);
   }
-  .side-panel{display:none}
-  .call-grid{
-    grid-template-columns:1fr;
-  }
 }
 @media (max-width: 900px){
   body{overflow:auto}
@@ -524,7 +545,7 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb{
   }
   .rail-btn{width:54px;height:54px;aspect-ratio:auto}
   .rail-spacer{display:none}
-  .list-panel,.chat-panel,.side-panel{border-radius:20px}
+  .list-panel,.chat-panel{border-radius:20px}
   .chat-actions{
     display:grid;
     grid-template-columns:repeat(2,minmax(0,1fr));
@@ -537,5 +558,8 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb{
   }
   .call-grid{
     grid-template-columns:1fr;
+  }
+  .call-controls{
+    grid-template-columns:repeat(2,minmax(0,1fr));
   }
 }
