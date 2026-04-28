@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Mesanger</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -24,17 +24,17 @@
 
       <div class="field">
         <label>Логин</label>
-        <input id="authLogin" placeholder="nikitosiki" />
+        <input id="authLogin" placeholder="nikitosiki" autocomplete="username" />
       </div>
 
       <div class="field" id="displayNameWrap" style="display:none;">
         <label>Имя в профиле</label>
-        <input id="authDisplayName" placeholder="Никнейм" />
+        <input id="authDisplayName" placeholder="Никнейм" autocomplete="nickname" />
       </div>
 
       <div class="field">
         <label>Пароль</label>
-        <input id="authPassword" type="password" placeholder="••••••••" />
+        <input id="authPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
       </div>
 
       <button id="authMainBtn" class="primary-btn">Войти</button>
@@ -109,8 +109,11 @@
         <div class="field compact">
           <label>Тема</label>
           <select id="setTheme">
-            <option value="dark">Тёмная</option>
             <option value="midnight">Midnight</option>
+            <option value="dark">Dark</option>
+            <option value="ocean">Ocean</option>
+            <option value="violet">Violet</option>
+            <option value="light">Light</option>
           </select>
         </div>
         <label class="toggle">
@@ -128,33 +131,38 @@
           <div id="chatSub" class="chat-sub">Слева открой диалог, группу или поиск друзей</div>
         </div>
         <div class="chat-actions">
-          <button id="voiceCallBtn" class="icon-btn">🎙</button>
-          <button id="videoCallBtn" class="icon-btn">📹</button>
-          <button id="screenBtn" class="icon-btn">🖥</button>
-          <button id="hangupBtn" class="icon-btn danger">✕</button>
+          <button id="voiceCallBtn" class="action-btn">🎙 Голос</button>
+          <button id="videoCallBtn" class="action-btn">📹 Видео</button>
+          <button id="screenBtn" class="action-btn">🖥 Экран</button>
+          <button id="hangupBtn" class="action-btn danger">✕ Завершить</button>
         </div>
       </header>
+
+      <section id="callStage" class="call-stage hidden">
+        <div class="call-head">
+          <div class="call-title">Звонок активен</div>
+          <div class="call-sub">Можно включить экран в любой момент</div>
+        </div>
+        <div class="call-grid">
+          <div class="video-card">
+            <div class="video-label">Ты</div>
+            <video id="localVideo" autoplay muted playsinline></video>
+          </div>
+          <div id="remoteVideos" class="remote-grid"></div>
+        </div>
+      </section>
 
       <section id="messages" class="messages"></section>
 
       <footer class="composer">
-        <input id="messageInput" placeholder="Написать сообщение..." />
-        <button id="sendBtn" class="primary-btn">Отправить</button>
+        <textarea id="messageInput" rows="1" placeholder="Написать сообщение..."></textarea>
+        <button id="sendBtn" class="send-btn">Отправить</button>
       </footer>
     </main>
 
     <aside class="side-panel glass">
       <div class="section-head">Участники</div>
       <div id="members" class="members"></div>
-
-      <div class="section-head" style="margin-top:16px;">Видео</div>
-      <div class="video-stack">
-        <div class="video-card">
-          <div class="video-label">Ты</div>
-          <video id="localVideo" autoplay muted playsinline></video>
-        </div>
-        <div id="remoteVideos" class="remote-grid"></div>
-      </div>
     </aside>
   </div>
 
