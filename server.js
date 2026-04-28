@@ -22,6 +22,7 @@ const EMPTY_DB = {
 };
 
 let db = structuredClone(EMPTY_DB);
+const connectionCounts = new Map();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
@@ -52,8 +53,10 @@ function publicUser(u) {
     login: u.login,
     displayName: u.displayName || u.login,
     accent: u.accent || "indigo",
-    theme: u.theme || "dark",
-    compact: !!u.compact
+    theme: u.theme || "midnight",
+    compact: !!u.compact,
+    online: !!u.online,
+    lastSeen: u.lastSeen || 0
   };
 }
 
@@ -93,10 +96,37 @@ function callRoom(type, id) {
   return `call:${type}:${id}`;
 }
 
-function conversationIdFrom(type, id, meId) {
-  if (type === "dm") return id;
-  if (type === "group") return id;
-  return `${type}:${id}:${meId}`;
+function makeSafeLoginId(login) {
+  return String(login || "").trim().toLowerCase();
+}
+
+function touchUser(userId, online = true) {
+  const user = db.users.find((u) => u.id === userId);
+  if (!user) return null;
+  user.lastSeen = Date.now();
+  user.online = online;
+  return user;
+}
+
+function ensureFriendship(a, b) {
+  if (!a || !b || a === b) return false;
+
+  const exists = db.friendships.find(
+    (f) =>
+      f.status === "accepted" &&
+      ((f.a === a && f.b === b) || (f.a === b && f.b === a))
+  );
+
+  if (!exists) {
+    db.friendships.push({
+      a,
+      b,
+      status: "accepted",
+      createdAt: Date.now()
+    });
+    return true;
+  }
+  return false;
 }
 
 function getFriends(userId) {
@@ -134,7 +164,7 @@ function getConversations(userId) {
     type: "dm",
     title: f.displayName,
     subtitle: `@${f.login}`,
-    avatar: f.displayName?.slice(0, 1)?.toUpperCase() || "U",
+    avatar: (f.displayName || f.login || "U").slice(0, 1).toUpperCase(),
     peer: f
   }));
 
@@ -158,6 +188,14 @@ async function loadDb() {
     db = structuredClone(EMPTY_DB);
     await saveDb();
   }
+
+  for (const user of db.users) {
+    if (typeof user.online !== "boolean") user.online = false;
+    if (!user.lastSeen) user.lastSeen = Date.now();
+    if (!user.accent) user.accent = "indigo";
+    if (!user.theme) user.theme = "midnight";
+    if (typeof user.compact !== "boolean") user.compact = false;
+  }
 }
 
 async function saveDb() {
@@ -177,6 +215,24 @@ function storeMessage(type, id, senderId, text) {
   return msg;
 }
 
+function messagePayload(m) {
+  const sender = db.users.find((u) => u.id === m.senderId);
+  return {
+    id: m.id,
+    type: m.type,
+    channelId: m.channelId,
+    senderId: m.senderId,
+    senderName: sender ? sender.displayName || sender.login : "Неизвестно",
+    senderLogin: sender ? sender.login : "unknown",
+    text: m.text,
+    createdAt: m.createdAt
+  };
+}
+
+function broadcastPresence(user) {
+  io.emit("presence:update", publicUser(user));
+}
+
 app.post("/api/register", async (req, res) => {
   const { login, password, displayName } = req.body || {};
   const cleanLogin = String(login || "").trim();
@@ -187,7 +243,7 @@ app.post("/api/register", async (req, res) => {
     return res.status(400).json({ error: "Логин минимум 3 символа, пароль минимум 4." });
   }
 
-  if (db.users.some((u) => u.login.toLowerCase() === cleanLogin.toLowerCase())) {
+  if (db.users.some((u) => makeSafeLoginId(u.login) === makeSafeLoginId(cleanLogin))) {
     return res.status(400).json({ error: "Такой логин уже занят." });
   }
 
@@ -197,8 +253,10 @@ app.post("/api/register", async (req, res) => {
     passwordHash: hashPassword(cleanPassword),
     displayName: cleanName || cleanLogin,
     accent: "indigo",
-    theme: "dark",
+    theme: "midnight",
     compact: false,
+    online: false,
+    lastSeen: Date.now(),
     createdAt: Date.now()
   };
 
@@ -217,7 +275,7 @@ app.post("/api/login", async (req, res) => {
 
   const user = db.users.find(
     (u) =>
-      u.login.toLowerCase() === cleanLogin.toLowerCase() &&
+      makeSafeLoginId(u.login) === makeSafeLoginId(cleanLogin) &&
       u.passwordHash === hashPassword(cleanPassword)
   );
 
@@ -275,6 +333,35 @@ app.get("/api/search", (req, res) => {
   res.json(list);
 });
 
+app.post("/api/dm", async (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) return res.status(401).json({ error: "Не авторизован" });
+
+  const { query } = req.body || {};
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return res.status(400).json({ error: "Введите логин или ID" });
+
+  const target = db.users.find(
+    (u) =>
+      u.id.toLowerCase() === q ||
+      u.login.toLowerCase() === q
+  );
+
+  if (!target) return res.status(404).json({ error: "Пользователь не найден" });
+  if (target.id === user.id) return res.status(400).json({ error: "Нельзя открыть чат с собой" });
+
+  const added = ensureFriendship(user.id, target.id);
+  if (added) await saveDb();
+
+  const dmId = pairKey(user.id, target.id);
+
+  res.json({
+    ok: true,
+    dmId,
+    target: publicUser(target)
+  });
+});
+
 app.post("/api/friends/add", async (req, res) => {
   const user = getAuthUser(req);
   if (!user) return res.status(401).json({ error: "Не авторизован" });
@@ -292,21 +379,8 @@ app.post("/api/friends/add", async (req, res) => {
   if (!target) return res.status(404).json({ error: "Пользователь не найден" });
   if (target.id === user.id) return res.status(400).json({ error: "Нельзя добавить себя" });
 
-  const already = db.friendships.find(
-    (f) =>
-      f.status === "accepted" &&
-      ((f.a === user.id && f.b === target.id) || (f.a === target.id && f.b === user.id))
-  );
-
-  if (!already) {
-    db.friendships.push({
-      a: user.id,
-      b: target.id,
-      status: "accepted",
-      createdAt: Date.now()
-    });
-    await saveDb();
-  }
+  const added = ensureFriendship(user.id, target.id);
+  if (added) await saveDb();
 
   res.json({
     ok: true,
@@ -329,6 +403,7 @@ app.post("/api/groups", async (req, res) => {
     ownerId: user.id,
     createdAt: Date.now()
   };
+
   db.groups.push(group);
   db.groupMembers.push({ groupId: group.id, userId: user.id, createdAt: Date.now() });
   await saveDb();
@@ -364,7 +439,7 @@ app.post("/api/groups/:id/invite", async (req, res) => {
 
   const group = db.groups.find((g) => g.id === groupId);
   if (!group) return res.status(404).json({ error: "Группа не найдена" });
-  if (group.ownerId !== user.id && !canAccessChannel(user.id, "group", groupId)) {
+  if (!canAccessChannel(user.id, "group", groupId)) {
     return res.status(403).json({ error: "Нет доступа" });
   }
 
@@ -397,7 +472,7 @@ app.get("/api/messages", (req, res) => {
   const messages = db.messages
     .filter((m) => m.type === type && m.channelId === id)
     .sort((a, b) => a.createdAt - b.createdAt)
-    .slice(-200)
+    .slice(-250)
     .map((m) => {
       const sender = db.users.find((u) => u.id === m.senderId);
       return {
@@ -415,20 +490,6 @@ app.get("/api/messages", (req, res) => {
   res.json({ messages });
 });
 
-function messagePayload(m) {
-  const sender = db.users.find((u) => u.id === m.senderId);
-  return {
-    id: m.id,
-    type: m.type,
-    channelId: m.channelId,
-    senderId: m.senderId,
-    senderName: sender ? sender.displayName || sender.login : "Неизвестно",
-    senderLogin: sender ? sender.login : "unknown",
-    text: m.text,
-    createdAt: m.createdAt
-  };
-}
-
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   const session = db.sessions.find((s) => s.token === token);
@@ -441,8 +502,24 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
+  const userId = socket.data.userId;
+  const user = db.users.find((u) => u.id === userId);
+  if (user) {
+    connectionCounts.set(userId, (connectionCounts.get(userId) || 0) + 1);
+    touchUser(userId, true);
+    broadcastPresence(user);
+  }
+
+  socket.on("presence:ping", async () => {
+    const u = touchUser(userId, true);
+    if (u) {
+      await saveDb();
+      broadcastPresence(u);
+    }
+  });
+
   socket.on("join-chat", ({ type, id }) => {
-    if (!canAccessChannel(socket.data.userId, type, id)) return;
+    if (!canAccessChannel(userId, type, id)) return;
     socket.join(channelRoom(type, id));
   });
 
@@ -453,16 +530,26 @@ io.on("connection", (socket) => {
   socket.on("message:send", async ({ type, id, text }) => {
     const clean = String(text || "").trim();
     if (!clean) return;
-    if (!canAccessChannel(socket.data.userId, type, id)) return;
+    if (!canAccessChannel(userId, type, id)) return;
 
-    const msg = storeMessage(type, id, socket.data.userId, clean);
+    if (type === "dm") {
+      const [a, b] = id.split("_");
+      const otherId = a === userId ? b : a;
+      const other = db.users.find((u) => u.id === otherId);
+      if (other) {
+        const changed = ensureFriendship(userId, other.id);
+        if (changed) await saveDb();
+      }
+    }
+
+    const msg = storeMessage(type, id, userId, clean);
     await saveDb();
 
     io.to(channelRoom(type, id)).emit("message:new", messagePayload(msg));
   });
 
   socket.on("call:join", async ({ type, id }) => {
-    if (!canAccessChannel(socket.data.userId, type, id)) return;
+    if (!canAccessChannel(userId, type, id)) return;
 
     const room = callRoom(type, id);
     socket.join(room);
@@ -495,7 +582,21 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
+    const count = Math.max(0, (connectionCounts.get(userId) || 1) - 1);
+    if (count <= 0) connectionCounts.delete(userId);
+    else connectionCounts.set(userId, count);
+
+    const u = db.users.find((x) => x.id === userId);
+    if (u) {
+      u.lastSeen = Date.now();
+      if ((connectionCounts.get(userId) || 0) === 0) {
+        u.online = false;
+      }
+      await saveDb();
+      broadcastPresence(u);
+    }
+
     for (const room of socket.rooms) {
       if (room.startsWith("call:")) {
         socket.to(room).emit("call:user-left", { id: socket.id });
@@ -503,6 +604,23 @@ io.on("connection", (socket) => {
     }
   });
 });
+
+setInterval(async () => {
+  const now = Date.now();
+  let changed = false;
+
+  for (const user of db.users) {
+    if (user.online && now - (user.lastSeen || 0) > 3 * 60 * 1000) {
+      user.online = false;
+      changed = true;
+      broadcastPresence(user);
+    }
+  }
+
+  if (changed) {
+    await saveDb();
+  }
+}, 30000);
 
 (async () => {
   await loadDb();
