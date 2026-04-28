@@ -5,12 +5,16 @@ const state = {
   current: null,
   socket: null,
   peers: {},
+  callNames: {},
   localStream: null,
   screenStream: null,
   currentCallKey: null,
   currentTab: "chats",
   lastPingAt: 0,
-  notificationAllowed: false
+  notificationAllowed: false,
+  currentCall: null,
+  incomingCall: null,
+  ringtone: null
 };
 
 const el = {
@@ -54,13 +58,22 @@ const el = {
 
   members: document.getElementById("members"),
   callStage: document.getElementById("callStage"),
+  callSub: document.getElementById("callSub"),
+  localLabel: document.getElementById("localLabel"),
   localVideo: document.getElementById("localVideo"),
   remoteVideos: document.getElementById("remoteVideos"),
 
   voiceCallBtn: document.getElementById("voiceCallBtn"),
   videoCallBtn: document.getElementById("videoCallBtn"),
   screenBtn: document.getElementById("screenBtn"),
-  hangupBtn: document.getElementById("hangupBtn")
+  cameraBtn: document.getElementById("cameraBtn"),
+  micBtn: document.getElementById("micBtn"),
+  hangupBtn: document.getElementById("hangupBtn"),
+
+  incomingCallModal: document.getElementById("incomingCallModal"),
+  incomingCallText: document.getElementById("incomingCallText"),
+  acceptCallBtn: document.getElementById("acceptCallBtn"),
+  rejectCallBtn: document.getElementById("rejectCallBtn")
 };
 
 function api(path, options = {}) {
@@ -165,6 +178,7 @@ function setThemeFromUser() {
   el.setAccent.value = state.me.accent || "indigo";
   el.setTheme.value = state.me.theme || "midnight";
   el.setCompact.checked = !!state.me.compact;
+  el.localLabel.textContent = state.me.displayName || state.me.login || "Ты";
 }
 
 async function refreshMe() {
@@ -211,6 +225,7 @@ function renderChats() {
     item.className =
       "item" +
       (state.current && state.current.type === c.type && state.current.id === c.id ? " active" : "");
+
     const status = c.type === "dm" && c.peer
       ? (c.peer.online ? "онлайн" : presenceText(c.peer.lastSeen))
       : c.subtitle;
@@ -314,6 +329,10 @@ async function sendMessage() {
     text
   });
 
+  if (state.current.type === "dm" && state.current.peer) {
+    socketEmit("dm:ensure", { query: state.current.peer.id });
+  }
+
   el.messageInput.value = "";
   autoGrowTextarea();
 }
@@ -340,8 +359,7 @@ async function searchUsers() {
     `;
 
     const btn = item.querySelector("button");
-    btn.onclick = async (e) => {
-      e.stopPropagation();
+    const openDm = async () => {
       const dm = await api("/api/dm", {
         method: "POST",
         body: JSON.stringify({ query: u.id })
@@ -350,7 +368,7 @@ async function searchUsers() {
       if (!dm.ok) return alert(data.error || "Ошибка");
       await refreshMe();
 
-      const target = {
+      const target = state.conversations.find((c) => c.type === "dm" && c.id === data.dmId) || {
         id: data.dmId,
         type: "dm",
         title: u.displayName || u.login,
@@ -361,24 +379,13 @@ async function searchUsers() {
       openConversation(target);
     };
 
-    item.onclick = async () => {
-      const dm = await api("/api/dm", {
-        method: "POST",
-        body: JSON.stringify({ query: u.login })
-      });
-      const data = await dm.json();
-      if (!dm.ok) return alert(data.error || "Ошибка");
-      await refreshMe();
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      await openDm();
+    };
 
-      const target = {
-        id: data.dmId,
-        type: "dm",
-        title: u.displayName || u.login,
-        subtitle: `@${u.login}`,
-        avatar: (u.displayName || u.login).slice(0, 1).toUpperCase(),
-        peer: u
-      };
-      openConversation(target);
+    item.onclick = async () => {
+      await openDm();
     };
 
     el.findResults.appendChild(item);
@@ -521,6 +528,10 @@ function connectSocket() {
     logout();
   });
 
+  state.socket.on("friends:refresh", async () => {
+    await refreshMe();
+  });
+
   state.socket.on("message:new", (msg) => {
     const isCurrent =
       state.current &&
@@ -530,11 +541,24 @@ function connectSocket() {
     if (isCurrent) {
       renderMessage(msg);
       scrollMessagesBottom();
+      loadMembers();
     }
 
     if (!state.me || msg.senderId === state.me.id) return;
     if (!isCurrent || document.hidden || !document.hasFocus()) {
-      notifyIncoming(msg);
+      notifyIncomingMessage(msg);
+    }
+  });
+
+  state.socket.on("message:incoming", (msg) => {
+    if (!state.me || msg.senderId === state.me.id) return;
+    const isCurrent =
+      state.current &&
+      state.current.type === msg.type &&
+      state.current.id === msg.channelId;
+
+    if (!isCurrent || document.hidden || !document.hasFocus()) {
+      notifyIncomingMessage(msg);
     }
   });
 
@@ -554,20 +578,45 @@ function connectSocket() {
     }
   });
 
-  state.socket.on("call:members", async ({ type, id, members }) => {
-    if (!state.current || state.current.type !== type || state.current.id !== id) return;
-    for (const m of members) {
-      await createPeer(m.id, true);
-    }
+  state.socket.on("call:incoming", (payload) => {
+    state.incomingCall = payload;
+    showIncomingCall(payload);
+    startRingtone();
+    notifyIncomingCall(payload);
   });
 
-  state.socket.on("call:user-joined", async ({ id }) => {
-    if (!state.current) return;
+  state.socket.on("call:accepted", async ({ callId, by }) => {
+    if (!state.currentCall || state.currentCall.callId !== callId) return;
+    stopRingtone();
+    el.callSub.textContent = `${escapeHtml(by.displayName || by.login)} принял звонок`;
+  });
+
+  state.socket.on("call:rejected", ({ callId, by }) => {
+    if (!state.currentCall || state.currentCall.callId !== callId) return;
+    stopRingtone();
+    el.callSub.textContent = `${escapeHtml(by.displayName || by.login)} отклонил звонок`;
+    setTimeout(() => stopCall(false), 800);
+  });
+
+  state.socket.on("call:members", async ({ type, id, members }) => {
+    if (!state.currentCall || state.currentCall.type !== type || state.currentCall.id !== id) return;
+    for (const m of members) {
+      state.callNames[m.id] = m.displayName || m.login || m.userId || m.id;
+      await createPeer(m.id, true);
+    }
+    updateCallButtons();
+  });
+
+  state.socket.on("call:user-joined", async ({ id, displayName, login }) => {
+    if (!state.currentCall) return;
+    state.callNames[id] = displayName || login || id;
     await createPeer(id, false);
+    updateRemoteLabels();
   });
 
   state.socket.on("call:user-left", ({ id }) => {
     removePeer(id);
+    updateRemoteLabels();
   });
 
   state.socket.on("call:signal", async ({ from, data }) => {
@@ -600,13 +649,63 @@ async function ensureMedia(kind) {
 
 function showCallStage() {
   el.callStage.classList.remove("hidden");
+  el.messages.style.display = "none";
+  el.localLabel.textContent = state.me?.displayName || state.me?.login || "Ты";
+}
+
+function hideCallStage() {
+  el.callStage.classList.add("hidden");
+  el.messages.style.display = "";
 }
 
 async function startCall(kind) {
   if (!state.current) return alert("Сначала открой чат");
   await ensureMedia(kind);
   showCallStage();
-  joinCallRoom();
+
+  state.currentCall = {
+    ...state.current,
+    kind,
+    callId: null,
+    mode: "outgoing"
+  };
+
+  el.callSub.textContent = "Идёт вызов...";
+  updateCallButtons();
+  socketEmit("call:request", {
+    type: state.current.type,
+    id: state.current.id,
+    kind
+  });
+
+  socketEmit("call:join", {
+    type: state.current.type,
+    id: state.current.id,
+    callId: null
+  });
+}
+
+function updateCallButtons() {
+  const camTrack = state.localStream?.getVideoTracks?.()[0];
+  const micTrack = state.localStream?.getAudioTracks?.()[0];
+
+  if (camTrack) {
+    el.cameraBtn.textContent = camTrack.enabled ? "📷 Камера: вкл" : "📷 Камера: выкл";
+  } else {
+    el.cameraBtn.textContent = "📷 Камера: добавить";
+  }
+
+  if (micTrack) {
+    el.micBtn.textContent = micTrack.enabled ? "🎤 Микрофон: вкл" : "🎤 Микрофон: выкл";
+  } else {
+    el.micBtn.textContent = "🎤 Микрофон";
+  }
+
+  if (state.screenStream) {
+    el.screenBtn.textContent = "🖥 Демка: вкл";
+  } else {
+    el.screenBtn.textContent = "🖥 Показать / скрыть демку";
+  }
 }
 
 function callKey() {
@@ -619,30 +718,128 @@ function joinCallRoom() {
   state.currentCallKey = callKey();
   cleanupPeers();
   showCallStage();
-  socketEmit("call:join", state.current);
+  socketEmit("call:join", {
+    type: state.current.type,
+    id: state.current.id,
+    callId: state.currentCall?.callId || null
+  });
 }
 
-async function shareScreen() {
-  if (!state.current || !state.localStream) {
-    return alert("Сначала начни звонок");
-  }
+async function acceptIncomingCall() {
+  const payload = state.incomingCall;
+  if (!payload) return;
+
+  stopRingtone();
+  hideIncomingCall();
+
+  await ensureMedia(payload.kind || "voice");
+  showCallStage();
+
+  state.currentCall = {
+    type: payload.type,
+    id: payload.id,
+    kind: payload.kind,
+    callId: payload.callId,
+    mode: "incoming"
+  };
+
+  el.callSub.textContent = `Звонок от ${payload.caller.displayName || payload.caller.login}`;
+  socketEmit("call:accept", { callId: payload.callId });
+  socketEmit("call:join", {
+    type: payload.type,
+    id: payload.id,
+    callId: payload.callId
+  });
+
+  updateCallButtons();
+}
+
+function rejectIncomingCall() {
+  const payload = state.incomingCall;
+  if (!payload) return;
+  stopRingtone();
+  socketEmit("call:reject", { callId: payload.callId });
+  hideIncomingCall();
+  state.incomingCall = null;
+}
+
+function showIncomingCall(payload) {
+  el.incomingCallText.textContent = `${payload.caller.displayName || payload.caller.login} вызывает вас`;
+  el.incomingCallModal.classList.remove("hidden");
+}
+
+function hideIncomingCall() {
+  el.incomingCallModal.classList.add("hidden");
+}
+
+function startRingtone() {
+  stopRingtone();
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioCtx();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(ctx.destination);
+
+    let on = false;
+    const timer = setInterval(() => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = on ? 660 : 880;
+      osc.connect(gain);
+      osc.start();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+      setTimeout(() => {
+        try { osc.stop(); } catch {}
+      }, 260);
+      on = !on;
+    }, 420);
+
+    state.ringtone = { ctx, timer };
+  } catch {}
+}
+
+function stopRingtone() {
+  if (!state.ringtone) return;
+  clearInterval(state.ringtone.timer);
+  try {
+    state.ringtone.ctx.close();
+  } catch {}
+  state.ringtone = null;
+}
+
+async function toggleScreen() {
+  if (!state.currentCall) return alert("Сначала начни звонок");
 
   if (state.screenStream) {
     restoreCameraTrack();
+    updateCallButtons();
     return;
   }
 
-  const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  state.screenStream = screen;
+  if (!navigator.mediaDevices.getDisplayMedia) {
+    alert("Этот браузер не поддерживает демонстрацию экрана");
+    return;
+  }
 
-  const screenTrack = screen.getVideoTracks()[0];
-  el.localVideo.srcObject = screen;
+  try {
+    const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    state.screenStream = screen;
+    const screenTrack = screen.getVideoTracks()[0];
+    el.localVideo.srcObject = screen;
+    replaceOutgoingVideoTrack(screenTrack);
 
-  replaceOutgoingVideoTrack(screenTrack);
+    screenTrack.onended = () => {
+      restoreCameraTrack();
+      updateCallButtons();
+    };
 
-  screenTrack.onended = () => {
-    restoreCameraTrack();
-  };
+    updateCallButtons();
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 function replaceOutgoingVideoTrack(track) {
@@ -663,6 +860,44 @@ function restoreCameraTrack() {
     state.screenStream.getTracks().forEach((t) => t.stop());
     state.screenStream = null;
   }
+  updateCallButtons();
+}
+
+async function toggleCamera() {
+  if (!state.currentCall) return;
+
+  const tracks = state.localStream?.getVideoTracks?.() || [];
+  if (tracks.length > 0) {
+    tracks[0].enabled = !tracks[0].enabled;
+    updateCallButtons();
+    return;
+  }
+
+  try {
+    const cam = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const track = cam.getVideoTracks()[0];
+    if (!state.localStream) {
+      state.localStream = new MediaStream();
+    }
+    state.localStream.addTrack(track);
+
+    Object.values(state.peers).forEach((pc) => {
+      pc.addTrack(track, state.localStream);
+    });
+
+    el.localVideo.srcObject = state.localStream;
+    updateCallButtons();
+  } catch (err) {
+    alert("Не удалось включить камеру");
+  }
+}
+
+function toggleMic() {
+  if (!state.currentCall || !state.localStream) return;
+  const audioTracks = state.localStream.getAudioTracks();
+  if (!audioTracks.length) return;
+  audioTracks[0].enabled = !audioTracks[0].enabled;
+  updateCallButtons();
 }
 
 async function createPeer(remoteId, initiator) {
@@ -737,17 +972,30 @@ async function handleSignal(from, data) {
 
 function attachRemoteStream(id, stream) {
   let tile = document.getElementById(`remote-${id}`);
+  const name = state.callNames[id] || id;
+
   if (!tile) {
     tile = document.createElement("div");
     tile.className = "remote-tile";
     tile.id = `remote-${id}`;
     tile.innerHTML = `
-      <div class="remote-name">${escapeHtml(id)}</div>
+      <div class="remote-name"></div>
       <video autoplay playsinline></video>
     `;
     el.remoteVideos.appendChild(tile);
   }
+
+  tile.querySelector(".remote-name").textContent = name;
   tile.querySelector("video").srcObject = stream;
+}
+
+function updateRemoteLabels() {
+  [...el.remoteVideos.querySelectorAll(".remote-name")].forEach((node) => {
+    const tile = node.closest(".remote-tile");
+    if (!tile) return;
+    const id = tile.id.replace("remote-", "");
+    node.textContent = state.callNames[id] || id;
+  });
 }
 
 function removePeer(id) {
@@ -757,11 +1005,13 @@ function removePeer(id) {
   }
   const tile = document.getElementById(`remote-${id}`);
   if (tile) tile.remove();
+  delete state.callNames[id];
 }
 
 function cleanupPeers() {
   Object.keys(state.peers).forEach(removePeer);
   el.remoteVideos.innerHTML = "";
+  state.callNames = {};
 }
 
 function stopCall(silent = false) {
@@ -778,9 +1028,13 @@ function stopCall(silent = false) {
     state.localStream.getTracks().forEach((t) => t.stop());
     state.localStream = null;
   }
+
   el.localVideo.srcObject = null;
   el.callStage.classList.add("hidden");
+  el.messages.style.display = "";
   state.currentCallKey = null;
+  state.currentCall = null;
+  updateCallButtons();
 }
 
 function logout() {
@@ -790,6 +1044,7 @@ function logout() {
   state.conversations = [];
   state.current = null;
   stopCall(true);
+  stopRingtone();
   if (state.socket) state.socket.disconnect();
   state.socket = null;
   el.app.classList.add("hidden");
@@ -863,15 +1118,24 @@ function playNotificationSound() {
   } catch {}
 }
 
-function notifyIncoming(msg) {
+function notifyIncomingMessage(msg) {
   playNotificationSound();
 
   if (state.notificationAllowed && "Notification" in window) {
     const title = msg.senderName || "Новое сообщение";
     const body = String(msg.text || "").slice(0, 120);
     try {
-      new Notification(title, {
-        body,
+      new Notification(title, { body, silent: false });
+    } catch {}
+  }
+}
+
+function notifyIncomingCall(payload) {
+  playNotificationSound();
+  if (state.notificationAllowed && "Notification" in window) {
+    try {
+      new Notification("Входящий звонок", {
+        body: `${payload.caller.displayName || payload.caller.login} вызывает вас`,
         silent: false
       });
     } catch {}
@@ -894,6 +1158,15 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) markActivity();
 });
 
+function showIncomingCall(payload) {
+  el.incomingCallText.textContent = `${payload.caller.displayName || payload.caller.login} вызывает вас`;
+  el.incomingCallModal.classList.remove("hidden");
+}
+
+function hideIncomingCall() {
+  el.incomingCallModal.classList.add("hidden");
+}
+
 el.authMainBtn.onclick = login;
 el.authAltBtn.onclick = () => switchAuthMode("register");
 el.tabLogin.onclick = () => switchAuthMode("login");
@@ -914,17 +1187,24 @@ el.messageInput.addEventListener("keydown", (e) => {
 });
 el.saveSettingsBtn.onclick = saveSettings;
 el.logoutBtn.onclick = logout;
+
 el.voiceCallBtn.onclick = () => startCall("voice");
 el.videoCallBtn.onclick = () => startCall("video");
-el.screenBtn.onclick = shareScreen;
+el.screenBtn.onclick = toggleScreen;
+el.cameraBtn.onclick = toggleCamera;
+el.micBtn.onclick = toggleMic;
 el.hangupBtn.onclick = () => stopCall(false);
+
+el.acceptCallBtn.onclick = acceptIncomingCall;
+el.rejectCallBtn.onclick = rejectIncomingCall;
 
 window.addEventListener("resize", setupDeviceMode);
 
-(async function init() {
+async function init() {
   switchAuthMode("login");
   applyTheme("midnight");
   setupDeviceMode();
+
   if (!state.token) return;
 
   const res = await api("/api/me");
@@ -934,4 +1214,6 @@ window.addEventListener("resize", setupDeviceMode);
   state.me = data.user;
   state.conversations = data.conversations || [];
   openApp();
-})();
+}
+
+init();
