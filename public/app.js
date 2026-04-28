@@ -8,7 +8,9 @@ const state = {
   localStream: null,
   screenStream: null,
   currentCallKey: null,
-  currentTab: "chats"
+  currentTab: "chats",
+  lastPingAt: 0,
+  notificationAllowed: false
 };
 
 const el = {
@@ -51,6 +53,7 @@ const el = {
   sendBtn: document.getElementById("sendBtn"),
 
   members: document.getElementById("members"),
+  callStage: document.getElementById("callStage"),
   localVideo: document.getElementById("localVideo"),
   remoteVideos: document.getElementById("remoteVideos"),
 
@@ -81,13 +84,7 @@ function setAccent(accent) {
 }
 
 function applyTheme(theme) {
-  if (theme === "midnight") {
-    document.documentElement.style.setProperty("--bg", "#050816");
-    document.documentElement.style.setProperty("--bg2", "#0a1021");
-  } else {
-    document.documentElement.style.setProperty("--bg", "#0b1020");
-    document.documentElement.style.setProperty("--bg2", "#11162a");
-  }
+  document.documentElement.setAttribute("data-theme", theme || "midnight");
 }
 
 function showError(text) {
@@ -142,6 +139,7 @@ function finishAuth(token, user) {
   state.me = user;
   localStorage.setItem("ms_token", token);
   openApp();
+  askNotificationPermission();
 }
 
 function openApp() {
@@ -151,15 +149,21 @@ function openApp() {
   refreshMe();
   renderTabs();
   setThemeFromUser();
+  setupDeviceMode();
+}
+
+function setupDeviceMode() {
+  const isTouch = window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 900;
+  document.body.classList.toggle("touch", isTouch);
 }
 
 function setThemeFromUser() {
   if (!state.me) return;
   setAccent(state.me.accent || "indigo");
-  applyTheme(state.me.theme || "dark");
+  applyTheme(state.me.theme || "midnight");
   el.setDisplayName.value = state.me.displayName || "";
   el.setAccent.value = state.me.accent || "indigo";
-  el.setTheme.value = state.me.theme || "dark";
+  el.setTheme.value = state.me.theme || "midnight";
   el.setCompact.checked = !!state.me.compact;
 }
 
@@ -173,10 +177,11 @@ async function refreshMe() {
   setThemeFromUser();
 
   el.meName.textContent = `${state.me.displayName} · ${state.me.login}`;
-  el.meInfo.textContent = `ID: ${state.me.id} · ${state.me.compact ? "компакт" : "обычный"} режим`;
+  el.meInfo.textContent = `ID: ${state.me.id} · ${state.me.online ? "онлайн" : presenceText(state.me.lastSeen)}`;
   renderChats();
   renderGroups();
   renderSettings();
+  renderMembers();
 }
 
 function renderTabs() {
@@ -203,12 +208,18 @@ function renderChats() {
   el.chatList.innerHTML = "";
   state.conversations.forEach((c) => {
     const item = document.createElement("div");
-    item.className = "item" + (state.current && state.current.type === c.type && state.current.id === c.id ? " active" : "");
+    item.className =
+      "item" +
+      (state.current && state.current.type === c.type && state.current.id === c.id ? " active" : "");
+    const status = c.type === "dm" && c.peer
+      ? (c.peer.online ? "онлайн" : presenceText(c.peer.lastSeen))
+      : c.subtitle;
+
     item.innerHTML = `
       <div class="avatar">${c.avatar || "U"}</div>
       <div class="item-main">
         <div class="item-title">${escapeHtml(c.title)}</div>
-        <div class="item-sub">${escapeHtml(c.subtitle || "")}</div>
+        <div class="item-sub">${escapeHtml(status || "")}</div>
       </div>
       <div class="badge">${c.type === "dm" ? "DM" : "GRP"}</div>
     `;
@@ -222,7 +233,9 @@ function renderGroups() {
   el.groupList.innerHTML = "";
   groups.forEach((g) => {
     const item = document.createElement("div");
-    item.className = "item" + (state.current && state.current.type === g.type && state.current.id === g.id ? " active" : "");
+    item.className =
+      "item" +
+      (state.current && state.current.type === g.type && state.current.id === g.id ? " active" : "");
     item.innerHTML = `
       <div class="avatar">#</div>
       <div class="item-main">
@@ -251,6 +264,7 @@ async function openConversation(c) {
     ? c.subtitle
     : `Групповой чат · ${c.subtitle || ""}`;
 
+  el.callStage.classList.add("hidden");
   await loadMessages();
   await loadMembers();
 
@@ -283,6 +297,12 @@ function scrollMessagesBottom() {
   el.messages.scrollTop = el.messages.scrollHeight;
 }
 
+function autoGrowTextarea() {
+  const ta = el.messageInput;
+  ta.style.height = "auto";
+  ta.style.height = Math.min(160, ta.scrollHeight) + "px";
+}
+
 async function sendMessage() {
   if (!state.current) return;
   const text = el.messageInput.value.trim();
@@ -293,7 +313,9 @@ async function sendMessage() {
     id: state.current.id,
     text
   });
+
   el.messageInput.value = "";
+  autoGrowTextarea();
 }
 
 async function searchUsers() {
@@ -310,29 +332,55 @@ async function searchUsers() {
       <div class="avatar">${escapeHtml((u.displayName || u.login).slice(0, 1).toUpperCase())}</div>
       <div class="item-main">
         <div class="item-title">${escapeHtml(u.displayName || u.login)}</div>
-        <div class="item-sub">@${escapeHtml(u.login)} · ID ${escapeHtml(u.id)}</div>
+        <div class="item-sub">@${escapeHtml(u.login)} · ID ${escapeHtml(u.id)} · ${u.online ? "онлайн" : presenceText(u.lastSeen)}</div>
       </div>
-      <button class="small-btn">Добавить</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="small-btn">Чат</button>
+      </div>
     `;
-    item.querySelector("button").onclick = async (e) => {
+
+    const btn = item.querySelector("button");
+    btn.onclick = async (e) => {
       e.stopPropagation();
-      const add = await api("/api/friends/add", {
-        method: "POST",
-        body: JSON.stringify({ query: u.login })
-      });
-      const data = await add.json();
-      if (!add.ok) return alert(data.error || "Ошибка");
-      await refreshMe();
-    };
-    item.onclick = async () => {
-      const add = await api("/api/friends/add", {
+      const dm = await api("/api/dm", {
         method: "POST",
         body: JSON.stringify({ query: u.id })
       });
-      const data = await add.json();
-      if (!add.ok) return alert(data.error || "Ошибка");
+      const data = await dm.json();
+      if (!dm.ok) return alert(data.error || "Ошибка");
       await refreshMe();
+
+      const target = {
+        id: data.dmId,
+        type: "dm",
+        title: u.displayName || u.login,
+        subtitle: `@${u.login}`,
+        avatar: (u.displayName || u.login).slice(0, 1).toUpperCase(),
+        peer: u
+      };
+      openConversation(target);
     };
+
+    item.onclick = async () => {
+      const dm = await api("/api/dm", {
+        method: "POST",
+        body: JSON.stringify({ query: u.login })
+      });
+      const data = await dm.json();
+      if (!dm.ok) return alert(data.error || "Ошибка");
+      await refreshMe();
+
+      const target = {
+        id: data.dmId,
+        type: "dm",
+        title: u.displayName || u.login,
+        subtitle: `@${u.login}`,
+        avatar: (u.displayName || u.login).slice(0, 1).toUpperCase(),
+        peer: u
+      };
+      openConversation(target);
+    };
+
     el.findResults.appendChild(item);
   });
 }
@@ -380,18 +428,35 @@ async function loadMembers() {
   if (!state.current) return;
 
   if (state.current.type === "dm") {
-    const friend = state.conversations.find((c) => c.id === state.current.id && c.type === "dm");
-    const mine = state.me;
-    const other = state.conversations.find((c) => c.id === state.current.id && c.type === "dm");
-    const label = other ? other.title : "Диалог";
-    const list = [
-      { name: mine.displayName, login: mine.login },
-      { name: label, login: other ? other.subtitle.replace("@", "") : "" }
-    ];
+    const other = state.conversations.find((c) => c.type === "dm" && c.id === state.current.id);
+    const list = [];
+    if (state.me) {
+      list.push({
+        name: state.me.displayName,
+        login: state.me.login,
+        online: state.me.online,
+        lastSeen: state.me.lastSeen
+      });
+    }
+    if (other && other.peer) {
+      list.push({
+        name: other.peer.displayName || other.peer.login,
+        login: other.peer.login,
+        online: other.peer.online,
+        lastSeen: other.peer.lastSeen
+      });
+    }
+
     list.forEach((u) => {
       const node = document.createElement("div");
-      node.className = "member";
-      node.innerHTML = `<div class="dot"></div><div><div>${escapeHtml(u.name)}</div><div class="item-sub">@${escapeHtml(u.login || "")}</div></div>`;
+      node.className = "member" + (u.online ? "" : " offline");
+      node.innerHTML = `
+        <div class="dot"></div>
+        <div>
+          <div>${escapeHtml(u.name)}</div>
+          <div class="item-sub">@${escapeHtml(u.login)} · ${u.online ? "онлайн" : presenceText(u.lastSeen)}</div>
+        </div>
+      `;
       el.members.appendChild(node);
     });
     return;
@@ -403,10 +468,24 @@ async function loadMembers() {
 
   (data.members || []).forEach((u) => {
     const node = document.createElement("div");
-    node.className = "member";
-    node.innerHTML = `<div class="dot"></div><div><div>${escapeHtml(u.displayName || u.login)}</div><div class="item-sub">@${escapeHtml(u.login)} · ${escapeHtml(u.id)}</div></div>`;
+    node.className = "member" + (u.online ? "" : " offline");
+    node.innerHTML = `
+      <div class="dot"></div>
+      <div>
+        <div>${escapeHtml(u.displayName || u.login)}</div>
+        <div class="item-sub">@${escapeHtml(u.login)} · ${escapeHtml(u.id)} · ${u.online ? "онлайн" : presenceText(u.lastSeen)}</div>
+      </div>
+    `;
     el.members.appendChild(node);
   });
+}
+
+function renderSettings() {
+  if (!state.me) return;
+  el.setDisplayName.value = state.me.displayName || "";
+  el.setAccent.value = state.me.accent || "indigo";
+  el.setTheme.value = state.me.theme || "midnight";
+  el.setCompact.checked = !!state.me.compact;
 }
 
 async function saveSettings() {
@@ -443,13 +522,35 @@ function connectSocket() {
   });
 
   state.socket.on("message:new", (msg) => {
-    if (
+    const isCurrent =
       state.current &&
       state.current.type === msg.type &&
-      state.current.id === msg.channelId
-    ) {
+      state.current.id === msg.channelId;
+
+    if (isCurrent) {
       renderMessage(msg);
       scrollMessagesBottom();
+    }
+
+    if (!state.me || msg.senderId === state.me.id) return;
+    if (!isCurrent || document.hidden || !document.hasFocus()) {
+      notifyIncoming(msg);
+    }
+  });
+
+  state.socket.on("presence:update", (user) => {
+    if (state.me && user.id === state.me.id) {
+      state.me.online = user.online;
+      state.me.lastSeen = user.lastSeen;
+      el.meInfo.textContent = `ID: ${state.me.id} · ${state.me.online ? "онлайн" : presenceText(state.me.lastSeen)}`;
+    }
+
+    const found = state.conversations.find((c) => c.type === "dm" && c.peer && c.peer.id === user.id);
+    if (found && found.peer) {
+      found.peer.online = user.online;
+      found.peer.lastSeen = user.lastSeen;
+      renderChats();
+      renderMembers();
     }
   });
 
@@ -497,9 +598,14 @@ async function ensureMedia(kind) {
   return state.localStream;
 }
 
+function showCallStage() {
+  el.callStage.classList.remove("hidden");
+}
+
 async function startCall(kind) {
   if (!state.current) return alert("Сначала открой чат");
   await ensureMedia(kind);
+  showCallStage();
   joinCallRoom();
 }
 
@@ -512,12 +618,19 @@ function joinCallRoom() {
   if (!state.current) return;
   state.currentCallKey = callKey();
   cleanupPeers();
+  showCallStage();
   socketEmit("call:join", state.current);
 }
 
 async function shareScreen() {
-  if (!state.current) return alert("Сначала открой чат");
-  if (!state.localStream) await ensureMedia("video");
+  if (!state.current || !state.localStream) {
+    return alert("Сначала начни звонок");
+  }
+
+  if (state.screenStream) {
+    restoreCameraTrack();
+    return;
+  }
 
   const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
   state.screenStream = screen;
@@ -666,6 +779,7 @@ function stopCall(silent = false) {
     state.localStream = null;
   }
   el.localVideo.srcObject = null;
+  el.callStage.classList.add("hidden");
   state.currentCallKey = null;
 }
 
@@ -693,6 +807,93 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
+function presenceText(lastSeen) {
+  if (!lastSeen) return "был(а) давно";
+  const diff = Date.now() - lastSeen;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return "был(а) только что";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `был(а) ${min} мин назад`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `был(а) ${hr} ч назад`;
+  const days = Math.floor(hr / 24);
+  return `был(а) ${days} дн назад`;
+}
+
+function askNotificationPermission() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    Notification.requestPermission().then((perm) => {
+      state.notificationAllowed = perm === "granted";
+    });
+  } else {
+    state.notificationAllowed = Notification.permission === "granted";
+  }
+}
+
+function playNotificationSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioCtx();
+    const o1 = ctx.createOscillator();
+    const o2 = ctx.createOscillator();
+    const g = ctx.createGain();
+
+    o1.frequency.value = 880;
+    o2.frequency.value = 1320;
+    o1.type = "sine";
+    o2.type = "sine";
+    g.gain.value = 0.0001;
+
+    o1.connect(g);
+    o2.connect(g);
+    g.connect(ctx.destination);
+
+    o1.start();
+    o2.start();
+
+    g.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+
+    setTimeout(() => {
+      o1.stop();
+      o2.stop();
+      ctx.close();
+    }, 250);
+  } catch {}
+}
+
+function notifyIncoming(msg) {
+  playNotificationSound();
+
+  if (state.notificationAllowed && "Notification" in window) {
+    const title = msg.senderName || "Новое сообщение";
+    const body = String(msg.text || "").slice(0, 120);
+    try {
+      new Notification(title, {
+        body,
+        silent: false
+      });
+    } catch {}
+  }
+}
+
+function markActivity() {
+  if (!state.socket || !state.me) return;
+  const now = Date.now();
+  if (now - state.lastPingAt < 8000) return;
+  state.lastPingAt = now;
+  state.socket.emit("presence:ping");
+}
+
+["mousemove", "keydown", "mousedown", "touchstart", "scroll", "focus"].forEach((evt) => {
+  window.addEventListener(evt, markActivity, { passive: true });
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) markActivity();
+});
+
 el.authMainBtn.onclick = login;
 el.authAltBtn.onclick = () => switchAuthMode("register");
 el.tabLogin.onclick = () => switchAuthMode("login");
@@ -704,8 +905,12 @@ el.findInput.addEventListener("keydown", (e) => {
 el.createGroupBtn.onclick = createGroup;
 el.inviteBtn.onclick = inviteToCurrentGroup;
 el.sendBtn.onclick = sendMessage;
+el.messageInput.addEventListener("input", autoGrowTextarea);
 el.messageInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
 });
 el.saveSettingsBtn.onclick = saveSettings;
 el.logoutBtn.onclick = logout;
@@ -714,8 +919,12 @@ el.videoCallBtn.onclick = () => startCall("video");
 el.screenBtn.onclick = shareScreen;
 el.hangupBtn.onclick = () => stopCall(false);
 
+window.addEventListener("resize", setupDeviceMode);
+
 (async function init() {
   switchAuthMode("login");
+  applyTheme("midnight");
+  setupDeviceMode();
   if (!state.token) return;
 
   const res = await api("/api/me");
