@@ -131,24 +131,33 @@
           <div id="chatSub" class="chat-sub">Слева открой диалог, группу или поиск друзей</div>
         </div>
         <div class="chat-actions">
-          <button id="voiceCallBtn" class="action-btn">🎙 Голос</button>
-          <button id="videoCallBtn" class="action-btn">📹 Видео</button>
-          <button id="screenBtn" class="action-btn">🖥 Экран</button>
-          <button id="hangupBtn" class="action-btn danger">✕ Завершить</button>
+          <button id="voiceCallBtn" class="action-btn">🎙 Аудиосвязь</button>
+          <button id="videoCallBtn" class="action-btn">📹 Видеосвязь</button>
         </div>
       </header>
 
       <section id="callStage" class="call-stage hidden">
         <div class="call-head">
-          <div class="call-title">Звонок активен</div>
-          <div class="call-sub">Можно включить экран в любой момент</div>
+          <div>
+            <div class="call-title">Звонок</div>
+            <div id="callSub" class="call-sub">Ожидание соединения</div>
+          </div>
         </div>
+
         <div class="call-grid">
           <div class="video-card">
-            <div class="video-label">Ты</div>
+            <div class="video-label" id="localLabel">Ты</div>
             <video id="localVideo" autoplay muted playsinline></video>
           </div>
+
           <div id="remoteVideos" class="remote-grid"></div>
+        </div>
+
+        <div class="call-controls">
+          <button id="hangupBtn" class="action-btn danger">❌ Отклонить / Завершить</button>
+          <button id="screenBtn" class="action-btn">🖥 Показать / скрыть демку</button>
+          <button id="cameraBtn" class="action-btn">📷 Камера</button>
+          <button id="micBtn" class="action-btn">🎤 Микрофон</button>
         </div>
       </section>
 
@@ -159,11 +168,17 @@
         <button id="sendBtn" class="send-btn">Отправить</button>
       </footer>
     </main>
+  </div>
 
-    <aside class="side-panel glass">
-      <div class="section-head">Участники</div>
-      <div id="members" class="members"></div>
-    </aside>
+  <div id="incomingCallModal" class="modal hidden">
+    <div class="modal-card glass">
+      <div class="modal-title">Входящий звонок</div>
+      <div id="incomingCallText" class="modal-text">—</div>
+      <div class="modal-actions">
+        <button id="acceptCallBtn" class="primary-btn">Принять</button>
+        <button id="rejectCallBtn" class="ghost-btn">Отклонить</button>
+      </div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
