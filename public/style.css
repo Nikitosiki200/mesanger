@@ -76,7 +76,6 @@ body{
 }
 
 .hidden{display:none !important}
-
 .glass{
   background:linear-gradient(180deg,var(--panel),var(--panel2));
   backdrop-filter:blur(18px);
@@ -90,24 +89,18 @@ body{
   place-items:center;
   padding:24px;
 }
-
 .auth-card{
   width:min(470px,100%);
   border-radius:28px;
   padding:24px;
   animation:pop .35s ease both;
 }
-
 .auth-topbar{
   display:flex;
   justify-content:flex-end;
   margin-bottom:10px;
 }
-
-.lang-field{
-  min-width:180px;
-}
-
+.lang-field{min-width:180px}
 .brand{
   display:flex;
   align-items:center;
@@ -126,14 +119,12 @@ body{
 }
 .brand-title{font-size:30px;font-weight:800;line-height:1.05}
 .brand-sub{color:var(--muted);margin-top:6px}
-
 .segmented{
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:10px;
   margin:18px 0;
 }
-
 .seg,.primary-btn,.ghost-btn,.small-btn,.rail-btn,.send-btn,.action-btn{
   border:0;
   border-radius:14px;
@@ -141,17 +132,14 @@ body{
   cursor:pointer;
   transition:.2s ease;
 }
-
 .seg{padding:12px 14px;background:var(--control)}
 .seg.active,.rail-btn.active{
   background:linear-gradient(135deg,var(--accent),var(--accent2));
   box-shadow:0 10px 25px rgba(102,119,255,.25);
 }
-
 .field{display:flex;flex-direction:column;gap:8px;margin:12px 0}
 .field.compact{margin:10px 0}
 label{font-size:12px;color:var(--muted)}
-
 input,select,textarea{
   width:100%;
   padding:13px 14px;
@@ -172,12 +160,10 @@ textarea{
   max-height:170px;
   line-height:1.35;
 }
-
 select option{
   color:#111827;
   background:#fff;
 }
-
 .primary-btn{
   width:100%;
   margin-top:8px;
@@ -196,7 +182,6 @@ select option{
   background:var(--control);
 }
 .full{width:100%}
-
 .error-text{
   min-height:20px;
   color:#fca5a5;
@@ -211,12 +196,10 @@ select option{
   gap:14px;
   padding:14px;
 }
-
 .rail,.sidebar,.chat-panel,.members-panel{
   border-radius:26px;
   overflow:hidden;
 }
-
 .rail{
   display:flex;
   flex-direction:column;
@@ -224,44 +207,36 @@ select option{
   padding:12px;
   gap:10px;
 }
-
 .rail-btn{
   width:100%;
   aspect-ratio:1/1;
   font-size:20px;
   background:var(--control);
 }
-
 .guild-rail-list{
   width:100%;
   display:flex;
   flex-direction:column;
   gap:10px;
 }
-
 .rail-spacer{flex:1}
-
 .sidebar,.chat-panel,.members-panel{
   display:flex;
   flex-direction:column;
   min-width:0;
 }
-
 .sidebar{
   padding-bottom:14px;
 }
-
 .sidebar-top,.chat-top{
   padding:18px 18px 14px;
   border-bottom:1px solid var(--border);
 }
-
 .me-row{
   display:flex;
   gap:12px;
   align-items:center;
 }
-
 .panel-title,.chat-title{
   font-size:18px;
   font-weight:800;
@@ -271,14 +246,12 @@ select option{
   color:var(--muted);
   margin-top:4px;
 }
-
 .sidebar-view{
   display:none;
   padding:14px;
   overflow:auto;
 }
 .sidebar-view.active{display:block}
-
 .section-head{
   font-size:12px;
   text-transform:uppercase;
@@ -293,7 +266,6 @@ select option{
   text-transform:uppercase;
   letter-spacing:.08em;
 }
-
 .inline{display:flex;gap:10px;align-items:center}
 .inline input{flex:1}
 
@@ -302,7 +274,6 @@ select option{
   flex-direction:column;
   gap:10px;
 }
-
 .item{
   display:flex;
   align-items:center;
@@ -372,7 +343,6 @@ select option{
   flex-direction:column;
   min-width:0;
 }
-
 .chat-head-row{
   display:flex;
   justify-content:space-between;
@@ -402,7 +372,6 @@ select option{
   flex-direction:column;
   gap:10px;
 }
-
 .msg{
   max-width:min(82%,760px);
   padding:12px 14px;
@@ -410,7 +379,6 @@ select option{
   background:rgba(255,255,255,.06);
   border:1px solid rgba(255,255,255,.05);
   animation:rise .18s ease both;
-  position:relative;
 }
 html[data-theme="light"] .msg{
   background:rgba(255,255,255,.94);
@@ -421,10 +389,7 @@ html[data-theme="light"] .msg{
   background:linear-gradient(135deg,rgba(102,119,255,.22),rgba(139,92,246,.18));
   border-color:rgba(102,119,255,.28);
 }
-.msg.deleted{
-  opacity:.75;
-  font-style:italic;
-}
+.msg.deleted{opacity:.75;font-style:italic}
 .msg-head{
   display:flex;
   align-items:center;
@@ -436,6 +401,7 @@ html[data-theme="light"] .msg{
   display:flex;
   align-items:center;
   gap:8px;
+  flex-wrap:wrap;
 }
 .msg-meta{
   font-size:11px;
@@ -462,6 +428,8 @@ html[data-theme="light"] .msg{
   border-radius:14px;
   background:rgba(255,255,255,.05);
   border:1px solid var(--border);
+  text-decoration:none;
+  color:inherit;
 }
 .attachment img{
   width:72px;
@@ -483,16 +451,12 @@ html[data-theme="light"] .msg{
   font-size:12px;
   color:var(--muted);
 }
-
 .message-actions{
   display:flex;
   gap:8px;
   justify-content:flex-end;
   margin-top:10px;
-  opacity:.25;
-  transition:.2s ease;
 }
-.msg:hover .message-actions{opacity:1}
 .message-actions button{
   padding:7px 10px;
   border-radius:10px;
@@ -501,15 +465,12 @@ html[data-theme="light"] .msg{
   background:var(--control);
   color:var(--text);
 }
-.message-actions button.danger{
-  background:rgba(239,68,68,.18);
-}
+.message-actions button.danger{background:rgba(239,68,68,.18)}
 .pinned-badge{
   font-size:11px;
   padding:4px 8px;
   border-radius:999px;
   background:rgba(102,119,255,.16);
-  color:var(--text);
 }
 
 .composer{
@@ -585,6 +546,7 @@ html[data-theme="light"] .msg{
   display:flex;
   align-items:center;
   gap:8px;
+  flex-wrap:wrap;
 }
 .member-sub,.pin-sub{
   font-size:12px;
@@ -600,19 +562,6 @@ html[data-theme="light"] .msg{
 .role-select{
   margin-top:8px;
   width:100%;
-}
-.member-actions{
-  display:flex;
-  gap:6px;
-  margin-top:8px;
-}
-.member-actions button{
-  padding:7px 10px;
-  border:0;
-  border-radius:10px;
-  background:var(--control);
-  color:var(--text);
-  cursor:pointer;
 }
 .pin-go{
   margin-top:8px;
@@ -664,22 +613,12 @@ html[data-theme="light"] .msg{
   border-radius:26px;
   text-align:center;
 }
-.modal-card.wide{
-  width:min(520px,100%);
-}
-.modal-title{
-  font-size:22px;
-  font-weight:800;
-}
+.modal-card.wide{width:min(520px,100%)}
+.modal-title{font-size:22px;font-weight:800}
 .modal-subtitle{
   color:var(--muted);
   margin-top:6px;
   margin-bottom:12px;
-}
-.modal-text{
-  margin-top:10px;
-  color:var(--muted);
-  line-height:1.4;
 }
 .modal-actions{
   display:grid;
@@ -694,40 +633,11 @@ html[data-theme="light"] .msg{
   text-align:left;
   margin:14px 0;
 }
-.avatar-actions{
-  flex:1;
-}
+.avatar-actions{flex:1}
 .small-note{
   font-size:12px;
   color:var(--muted);
   margin-top:8px;
-}
-
-.message-actions-menu{
-  position:fixed;
-  z-index:1000;
-  min-width:180px;
-  background:var(--panel2);
-  border:1px solid var(--border);
-  border-radius:18px;
-  padding:8px;
-  box-shadow:var(--shadow);
-}
-.message-actions-menu button{
-  width:100%;
-  border:0;
-  border-radius:12px;
-  padding:10px 12px;
-  background:var(--control);
-  color:var(--text);
-  cursor:pointer;
-  text-align:left;
-}
-.message-actions-menu button:hover{
-  background:rgba(255,255,255,.10);
-}
-.message-actions-menu button.danger{
-  background:rgba(239,68,68,.16);
 }
 
 @keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
