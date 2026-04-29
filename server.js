@@ -1,7 +1,9 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const fs = require("fs/promises");
+const multer = require("multer");
+const fs = require("fs");
+const fsPromises = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
 
@@ -10,31 +12,67 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const DB_FILE = path.join(__dirname, "db.json");
+
+const ROOT = __dirname;
+const UPLOADS_DIR = path.join(ROOT, "uploads");
+const AVATARS_DIR = path.join(UPLOADS_DIR, "avatars");
+const FILES_DIR = path.join(UPLOADS_DIR, "files");
+const DB_FILE = path.join(ROOT, "db.json");
+
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+fs.mkdirSync(AVATARS_DIR, { recursive: true });
+fs.mkdirSync(FILES_DIR, { recursive: true });
+
+app.use(express.json());
+app.use("/uploads", express.static(UPLOADS_DIR));
+app.use(express.static(path.join(ROOT, "public")));
 
 const EMPTY_DB = {
   users: [],
   sessions: [],
   friendships: [],
-  groups: [],
-  groupMembers: [],
+  guilds: [],
+  channels: [],
+  guildMembers: [],
   messages: []
 };
 
 let db = structuredClone(EMPTY_DB);
-const connectionCounts = new Map();
 const userSockets = new Map();
-const pendingCalls = new Map();
+const connectionCounts = new Map();
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      cb(null, AVATARS_DIR);
+    },
+    filename(req, file, cb) {
+      const ext = path.extname(file.originalname || "").toLowerCase() || ".png";
+      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${ext}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
 
-function pairKey(a, b) {
-  return [a, b].sort().join("_");
-}
+const fileUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      cb(null, FILES_DIR);
+    },
+    filename(req, file, cb) {
+      const ext = path.extname(file.originalname || "").toLowerCase();
+      cb(null, `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 }
+});
 
 function hashPassword(password) {
-  return crypto.createHash("sha256").update(password).digest("hex");
+  return crypto.createHash("sha256").update(String(password)).digest("hex");
+}
+
+function makeToken() {
+  return crypto.randomBytes(24).toString("hex");
 }
 
 function makeId5() {
@@ -45,12 +83,24 @@ function makeId5() {
   return id;
 }
 
-function makeToken() {
-  return crypto.randomBytes(24).toString("hex");
+function safeLogin(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
-function makeCallId() {
-  return crypto.randomBytes(8).toString("hex");
+function pairKey(a, b) {
+  return [a, b].sort().join("_");
+}
+
+function dmRoom(a, b) {
+  return `dm:${pairKey(a, b)}`;
+}
+
+function guildRoom(channelId) {
+  return `guild:${channelId}`;
+}
+
+function isImage(mime) {
+  return String(mime || "").startsWith("image/");
 }
 
 function publicUser(u) {
@@ -58,11 +108,12 @@ function publicUser(u) {
     id: u.id,
     login: u.login,
     displayName: u.displayName || u.login,
-    accent: u.accent || "indigo",
+    language: u.language || "ru",
     theme: u.theme || "midnight",
-    compact: !!u.compact,
+    accent: u.accent || "indigo",
+    avatarUrl: u.avatarUrl || "",
     online: !!u.online,
-    lastSeen: u.lastSeen || 0
+    lastSeen: u.lastSeen || Date.now()
   };
 }
 
@@ -83,72 +134,70 @@ function getAuthUser(req) {
   return getUserFromToken(getAuthToken(req));
 }
 
-function canAccessChannel(userId, type, id) {
-  if (type === "dm") {
-    const [a, b] = id.split("_");
-    return a === userId || b === userId;
+function getRole(userId, guildId) {
+  const row = db.guildMembers.find((m) => m.guildId === guildId && m.userId === userId);
+  return row ? row.role : null;
+}
+
+function isGuildMember(userId, guildId) {
+  return !!getRole(userId, guildId);
+}
+
+function canManageGuild(userId, guildId) {
+  const role = getRole(userId, guildId);
+  return role === "owner" || role === "admin";
+}
+
+function canEditRoles(userId, guildId) {
+  return getRole(userId, guildId) === "owner";
+}
+
+function canModerateMessage(userId, msg) {
+  if (!msg) return false;
+
+  if (msg.scope === "dm") {
+    return msg.senderId === userId;
   }
-  if (type === "group") {
-    return db.groupMembers.some((m) => m.groupId === id && m.userId === userId);
+
+  if (msg.scope === "guild") {
+    const channel = db.channels.find((c) => c.id === msg.targetId);
+    if (!channel) return false;
+    const role = getRole(userId, channel.guildId);
+    return msg.senderId === userId || role === "owner" || role === "admin";
   }
+
   return false;
 }
 
-function channelRoom(type, id) {
-  return `chat:${type}:${id}`;
+function canPinMessage(userId, msg) {
+  return canModerateMessage(userId, msg);
 }
 
-function callRoom(type, id) {
-  return `call:${type}:${id}`;
+function getGuildChannels(guildId) {
+  return db.channels
+    .filter((c) => c.guildId === guildId)
+    .sort((a, b) => a.createdAt - b.createdAt);
 }
 
-function makeSafeLoginId(login) {
-  return String(login || "").trim().toLowerCase();
-}
-
-function touchUser(userId, online = true) {
-  const user = db.users.find((u) => u.id === userId);
-  if (!user) return null;
-  user.lastSeen = Date.now();
-  user.online = online;
-  return user;
-}
-
-function broadcastPresence(user) {
-  io.emit("presence:update", publicUser(user));
-}
-
-function emitToUser(userId, event, payload) {
-  const sockets = userSockets.get(userId);
-  if (!sockets) return;
-  for (const socketId of sockets) {
-    io.to(socketId).emit(event, payload);
-  }
-}
-
-function refreshFriends(userId) {
-  emitToUser(userId, "friends:refresh", {});
-}
-
-function ensureFriendship(a, b) {
-  if (!a || !b || a === b) return false;
-
-  const exists = db.friendships.find(
-    (f) =>
-      f.status === "accepted" &&
-      ((f.a === a && f.b === b) || (f.a === b && f.b === a))
-  );
-
-  if (!exists) {
-    db.friendships.push({
-      a,
-      b,
-      status: "accepted",
-      createdAt: Date.now()
+function getGuildsFor(userId) {
+  return db.guildMembers
+    .filter((m) => m.userId === userId)
+    .map((m) => db.guilds.find((g) => g.id === m.guildId))
+    .filter(Boolean)
+    .map((g) => {
+      const role = getRole(userId, g.id);
+      return {
+        id: g.id,
+        name: g.name,
+        ownerId: g.ownerId,
+        role,
+        channels: getGuildChannels(g.id).map((c) => ({
+          id: c.id,
+          guildId: c.guildId,
+          name: c.name
+        }))
+      };
     });
-    return true;
-  }
-  return false;
 }
 
 function getFriends(userId) {
@@ -166,135 +215,185 @@ function getFriends(userId) {
     .filter(Boolean);
 }
 
-function getGroupsFor(userId) {
-  return db.groupMembers
-    .filter((m) => m.userId === userId)
-    .map((m) => db.groups.find((g) => g.id === m.groupId))
-    .filter(Boolean)
-    .map((g) => ({
-      id: g.id,
-      type: "group",
-      title: g.name,
-      subtitle: `${db.groupMembers.filter((m) => m.groupId === g.id).length} участников`,
-      ownerId: g.ownerId
-    }));
+function getDmList(userId) {
+  return getFriends(userId)
+    .map((peer) => {
+      const room = pairKey(userId, peer.id);
+      const msgs = db.messages
+        .filter((m) => m.scope === "dm" && m.targetId === room && !m.deleted)
+        .sort((a, b) => a.createdAt - b.createdAt);
+      const last = msgs[msgs.length - 1];
+      return {
+        peer,
+        room,
+        preview: last ? last.deleted ? (last.senderId === userId ? "You deleted a message" : "Message deleted") : last.text : "",
+        lastMessageAt: last ? last.createdAt : 0
+      };
+    })
+    .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0));
 }
 
-function getConversations(userId) {
-  const friends = getFriends(userId).map((f) => ({
-    id: pairKey(userId, f.id),
-    type: "dm",
-    title: f.displayName,
-    subtitle: `@${f.login}`,
-    avatar: (f.displayName || f.login || "U").slice(0, 1).toUpperCase(),
-    peer: f
-  }));
-
-  const groups = getGroupsFor(userId).map((g) => ({
-    id: g.id,
-    type: "group",
-    title: g.title,
-    subtitle: `${g.subtitle}`,
-    avatar: "#",
-    peer: null
-  }));
-
-  return [...friends, ...groups];
-}
-
-function getChannelTargets(userId, type, id) {
-  if (type === "dm") {
-    const [a, b] = id.split("_");
-    const otherId = a === userId ? b : a;
-    return otherId ? [otherId] : [];
-  }
-  if (type === "group") {
-    return db.groupMembers
-      .filter((m) => m.groupId === id && m.userId !== userId)
-      .map((m) => m.userId);
-  }
-  return [];
-}
-
-async function loadDb() {
-  try {
-    const raw = await fs.readFile(DB_FILE, "utf8");
-    db = JSON.parse(raw);
-  } catch {
-    db = structuredClone(EMPTY_DB);
-    await saveDb();
-  }
-
-  for (const user of db.users) {
-    if (typeof user.online !== "boolean") user.online = false;
-    if (!user.lastSeen) user.lastSeen = Date.now();
-    if (!user.accent) user.accent = "indigo";
-    if (!user.theme) user.theme = "midnight";
-    if (typeof user.compact !== "boolean") user.compact = false;
-  }
-}
-
-async function saveDb() {
-  await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
-}
-
-function storeMessage(type, id, senderId, text) {
-  const msg = {
-    id: crypto.randomBytes(8).toString("hex"),
-    type,
-    channelId: id,
-    senderId,
-    text,
-    createdAt: Date.now()
-  };
-  db.messages.push(msg);
-  return msg;
+function normalizeAttachments(list) {
+  return Array.isArray(list) ? list.map((a) => ({
+    name: String(a.name || "file"),
+    url: String(a.url || ""),
+    size: Number(a.size || 0),
+    type: String(a.type || "")
+  })).filter((a) => a.url) : [];
 }
 
 function messagePayload(m) {
   const sender = db.users.find((u) => u.id === m.senderId);
   return {
     id: m.id,
-    type: m.type,
-    channelId: m.channelId,
+    scope: m.scope,
+    targetId: m.targetId,
     senderId: m.senderId,
-    senderName: sender ? sender.displayName || sender.login : "Неизвестно",
+    senderName: sender ? (sender.displayName || sender.login) : "Unknown",
     senderLogin: sender ? sender.login : "unknown",
+    senderAvatar: sender ? (sender.avatarUrl || "") : "",
     text: m.text,
+    attachments: normalizeAttachments(m.attachments),
+    pinned: !!m.pinned,
+    deleted: !!m.deleted,
     createdAt: m.createdAt
   };
 }
 
-function callMemberPayload(socket) {
-  const u = db.users.find((x) => x.id === socket.data.userId);
-  return {
-    id: socket.id,
-    userId: socket.data.userId,
-    login: socket.data.login,
-    displayName: u ? (u.displayName || u.login) : socket.data.login
+function storeMessage(scope, targetId, senderId, text, attachments = []) {
+  const msg = {
+    id: crypto.randomBytes(8).toString("hex"),
+    scope,
+    targetId,
+    senderId,
+    text,
+    attachments: normalizeAttachments(attachments),
+    pinned: false,
+    deleted: false,
+    createdAt: Date.now()
   };
+  db.messages.push(msg);
+  return msg;
 }
 
-function getCallPeers(roomSockets, callerSocketId) {
-  return roomSockets
-    .filter((s) => s.id !== callerSocketId)
-    .map((s) => {
-      const u = db.users.find((x) => x.id === s.data.userId);
-      return {
-        id: s.id,
-        userId: s.data.userId,
-        login: s.data.login,
-        displayName: u ? (u.displayName || u.login) : s.data.login
-      };
-    });
+function messagesForDm(userId, peerId) {
+  const room = pairKey(userId, peerId);
+  return db.messages
+    .filter((m) => m.scope === "dm" && m.targetId === room)
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map(messagePayload);
+}
+
+function messagesForGuild(channelId) {
+  return db.messages
+    .filter((m) => m.scope === "guild" && m.targetId === channelId)
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map(messagePayload);
+}
+
+function pinsForDm(userId, peerId) {
+  const room = pairKey(userId, peerId);
+  return db.messages
+    .filter((m) => m.scope === "dm" && m.targetId === room && m.pinned)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(messagePayload);
+}
+
+function pinsForGuild(channelId) {
+  return db.messages
+    .filter((m) => m.scope === "guild" && m.targetId === channelId && m.pinned)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(messagePayload);
+}
+
+function getMemberIdsForGuild(guildId) {
+  return db.guildMembers
+    .filter((m) => m.guildId === guildId)
+    .map((m) => m.userId);
+}
+
+function broadcastToGuildMembers(guildId, event, payload) {
+  for (const userId of getMemberIdsForGuild(guildId)) {
+    const sockets = userSockets.get(userId);
+    if (!sockets) continue;
+    for (const sid of sockets) {
+      io.to(sid).emit(event, payload);
+    }
+  }
+}
+
+function broadcastPresence(user) {
+  io.emit("presence:update", publicUser(user));
+}
+
+function refreshDmsFor(userId) {
+  const sockets = userSockets.get(userId);
+  if (!sockets) return;
+  for (const sid of sockets) io.to(sid).emit("dms:refresh");
+}
+
+function refreshGuildsFor(userId) {
+  const sockets = userSockets.get(userId);
+  if (!sockets) return;
+  for (const sid of sockets) io.to(sid).emit("guilds:refresh");
+}
+
+function refreshCurrentChat(scope, targetId) {
+  if (scope === "dm") {
+    io.to(dmRoom(targetId.a, targetId.b)).emit("chat:updated", { scope, targetId: pairKey(targetId.a, targetId.b) });
+  }
+  if (scope === "guild") {
+    io.to(guildRoom(targetId)).emit("chat:updated", { scope, targetId });
+  }
+}
+
+function roomForMessage(scope, targetId, userId, peerId = null) {
+  if (scope === "dm") return dmRoom(userId, peerId || targetId);
+  if (scope === "guild") return guildRoom(targetId);
+  return "";
+}
+
+async function loadDb() {
+  try {
+    const raw = await fsPromises.readFile(DB_FILE, "utf8");
+    db = JSON.parse(raw);
+  } catch {
+    db = structuredClone(EMPTY_DB);
+    await saveDb();
+  }
+
+  for (const u of db.users) {
+    if (typeof u.online !== "boolean") u.online = false;
+    if (!u.lastSeen) u.lastSeen = Date.now();
+    if (!u.language) u.language = "ru";
+    if (!u.theme) u.theme = "midnight";
+    if (!u.accent) u.accent = "indigo";
+    if (!u.avatarUrl) u.avatarUrl = "";
+  }
+
+  for (const gm of db.guildMembers) {
+    if (!gm.role) gm.role = "member";
+  }
+
+  for (const m of db.messages) {
+    if (!Array.isArray(m.attachments)) m.attachments = [];
+    if (typeof m.pinned !== "boolean") m.pinned = false;
+    if (typeof m.deleted !== "boolean") m.deleted = false;
+  }
+}
+
+async function saveDb() {
+  await fsPromises.writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
 }
 
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   const session = db.sessions.find((s) => s.token === token);
   if (!session) return next(new Error("unauthorized"));
+
   const user = db.users.find((u) => u.id === session.userId);
   if (!user) return next(new Error("unauthorized"));
+
   socket.data.userId = user.id;
   socket.data.login = user.login;
   next();
@@ -308,188 +407,158 @@ io.on("connection", (socket) => {
     connectionCounts.set(userId, (connectionCounts.get(userId) || 0) + 1);
     if (!userSockets.has(userId)) userSockets.set(userId, new Set());
     userSockets.get(userId).add(socket.id);
-    touchUser(userId, true);
+    user.online = true;
+    user.lastSeen = Date.now();
     broadcastPresence(user);
   }
 
   socket.on("presence:ping", async () => {
-    const u = touchUser(userId, true);
-    if (u) {
-      await saveDb();
-      broadcastPresence(u);
-    }
-  });
-
-  socket.on("join-chat", ({ type, id }) => {
-    if (!canAccessChannel(userId, type, id)) return;
-    socket.join(channelRoom(type, id));
-  });
-
-  socket.on("leave-chat", ({ type, id }) => {
-    socket.leave(channelRoom(type, id));
-  });
-
-  socket.on("message:send", async ({ type, id, text }) => {
-    const clean = String(text || "").trim();
-    if (!clean) return;
-    if (!canAccessChannel(userId, type, id)) return;
-
-    if (type === "dm") {
-      const [a, b] = id.split("_");
-      const otherId = a === userId ? b : a;
-      const other = db.users.find((u) => u.id === otherId);
-      if (other) {
-        const changed = ensureFriendship(userId, other.id);
-        if (changed) {
-          await saveDb();
-          refreshFriends(userId);
-          refreshFriends(other.id);
-        }
-      }
-    }
-
-    const msg = storeMessage(type, id, userId, clean);
+    const u = db.users.find((x) => x.id === userId);
+    if (!u) return;
+    u.online = true;
+    u.lastSeen = Date.now();
     await saveDb();
+    broadcastPresence(u);
+  });
 
-    io.to(channelRoom(type, id)).emit("message:new", messagePayload(msg));
+  socket.on("join-dm", ({ peerId }) => {
+    if (!peerId) return;
+    socket.join(dmRoom(userId, peerId));
+  });
 
-    if (type === "dm") {
-      const targets = getChannelTargets(userId, type, id);
-      for (const targetId of targets) {
-        emitToUser(targetId, "friends:refresh", {});
-        emitToUser(targetId, "message:incoming", messagePayload(msg));
+  socket.on("leave-dm", ({ peerId }) => {
+    if (!peerId) return;
+    socket.leave(dmRoom(userId, peerId));
+  });
+
+  socket.on("join-guild-channel", ({ channelId }) => {
+    if (!channelId || !isGuildMember(userId, db.channels.find((c) => c.id === channelId)?.guildId)) return;
+    socket.join(guildRoom(channelId));
+  });
+
+  socket.on("leave-guild-channel", ({ channelId }) => {
+    if (!channelId) return;
+    socket.leave(guildRoom(channelId));
+  });
+
+  socket.on("message:send", async (payload) => {
+    const scope = String(payload?.scope || "");
+    const text = String(payload?.text || "").trim();
+    const attachments = normalizeAttachments(payload?.attachments || []);
+
+    if (!text && attachments.length === 0) return;
+
+    if (scope === "dm") {
+      const peerId = String(payload?.peerId || "");
+      if (!peerId || peerId === userId) return;
+      const peer = db.users.find((u) => u.id === peerId);
+      if (!peer) return;
+
+      const existing = db.friendships.find(
+        (f) =>
+          f.status === "accepted" &&
+          ((f.a === userId && f.b === peerId) || (f.a === peerId && f.b === userId))
+      );
+      if (!existing) {
+        db.friendships.push({
+          a: userId,
+          b: peerId,
+          status: "accepted",
+          createdAt: Date.now()
+        });
       }
-    }
-  });
 
-  socket.on("dm:ensure", async ({ query }) => {
-    const q = String(query || "").trim().toLowerCase();
-    const target = db.users.find(
-      (u) => u.id.toLowerCase() === q || u.login.toLowerCase() === q
-    );
-    if (!target || target.id === userId) return;
-
-    const changed = ensureFriendship(userId, target.id);
-    if (changed) {
+      const room = pairKey(userId, peerId);
+      const msg = storeMessage("dm", room, userId, text, attachments);
       await saveDb();
-      refreshFriends(userId);
-      refreshFriends(target.id);
+
+      io.to(dmRoom(userId, peerId)).emit("message:new", messagePayload(msg));
+      refreshDmsFor(userId);
+      refreshDmsFor(peerId);
+      return;
+    }
+
+    if (scope === "guild") {
+      const channelId = String(payload?.channelId || "");
+      const channel = db.channels.find((c) => c.id === channelId);
+      if (!channel || !isGuildMember(userId, channel.guildId)) return;
+
+      const msg = storeMessage("guild", channelId, userId, text, attachments);
+      await saveDb();
+
+      io.to(guildRoom(channelId)).emit("message:new", messagePayload(msg));
+      return;
     }
   });
 
-  socket.on("call:request", async ({ type, id, kind }) => {
-    if (!canAccessChannel(userId, type, id)) return;
+  socket.on("message:pin", async ({ scope, peerId, channelId, messageId }) => {
+    const msg = db.messages.find((m) => m.id === messageId);
+    if (!msg) return;
 
-    const callId = makeCallId();
-    const targets = getChannelTargets(userId, type, id);
-
-    pendingCalls.set(callId, {
-      callId,
-      type,
-      id,
-      kind,
-      callerId: userId,
-      callerSocketId: socket.id,
-      targets,
-      createdAt: Date.now()
-    });
-
-    const callerUser = db.users.find((u) => u.id === userId);
-    const callerPayload = callerUser ? publicUser(callerUser) : { id: userId, login: socket.data.login, displayName: socket.data.login };
-
-    for (const targetId of targets) {
-      emitToUser(targetId, "call:incoming", {
-        callId,
-        type,
-        id,
-        kind,
-        caller: callerPayload
-      });
+    if (scope === "dm") {
+      if (!peerId) return;
+      const room = pairKey(userId, peerId);
+      if (msg.scope !== "dm" || msg.targetId !== room) return;
+      if (!canPinMessage(userId, msg)) return;
+      msg.pinned = !msg.pinned;
+      await saveDb();
+      io.to(dmRoom(userId, peerId)).emit("chat:updated", { scope: "dm", targetId: room });
+      return;
     }
 
-    socket.emit("call:request:ok", { callId });
-  });
-
-  socket.on("call:accept", ({ callId }) => {
-    const call = pendingCalls.get(callId);
-    if (!call) return;
-
-    const callerUser = db.users.find((u) => u.id === call.callerId);
-    const me = db.users.find((u) => u.id === userId);
-
-    if (callerUser) {
-      emitToUser(call.callerId, "call:accepted", {
-        callId,
-        type: call.type,
-        id: call.id,
-        by: me ? publicUser(me) : { id: userId, login: socket.data.login, displayName: socket.data.login }
-      });
+    if (scope === "guild") {
+      if (!channelId) return;
+      const channel = db.channels.find((c) => c.id === channelId);
+      if (!channel || msg.scope !== "guild" || msg.targetId !== channelId) return;
+      if (!canPinMessage(userId, msg)) return;
+      msg.pinned = !msg.pinned;
+      await saveDb();
+      io.to(guildRoom(channelId)).emit("chat:updated", { scope: "guild", targetId: channelId });
     }
   });
 
-  socket.on("call:reject", ({ callId }) => {
-    const call = pendingCalls.get(callId);
-    if (!call) return;
+  socket.on("message:delete", async ({ scope, peerId, channelId, messageId }) => {
+    const msg = db.messages.find((m) => m.id === messageId);
+    if (!msg) return;
 
-    const callerUser = db.users.find((u) => u.id === call.callerId);
-    const me = db.users.find((u) => u.id === userId);
+    if (scope === "dm") {
+      if (!peerId) return;
+      const room = pairKey(userId, peerId);
+      if (msg.scope !== "dm" || msg.targetId !== room) return;
+      if (!canModerateMessage(userId, msg)) return;
 
-    if (callerUser) {
-      emitToUser(call.callerId, "call:rejected", {
-        callId,
-        type: call.type,
-        id: call.id,
-        by: me ? publicUser(me) : { id: userId, login: socket.data.login, displayName: socket.data.login }
-      });
+      msg.deleted = true;
+      msg.text = "";
+      msg.attachments = [];
+      msg.pinned = false;
+      await saveDb();
+
+      io.to(dmRoom(userId, peerId)).emit("chat:updated", { scope: "dm", targetId: room });
+      refreshDmsFor(userId);
+      refreshDmsFor(peerId);
+      return;
     }
-  });
 
-  socket.on("call:join", async ({ type, id, callId }) => {
-    if (!canAccessChannel(userId, type, id)) return;
+    if (scope === "guild") {
+      if (!channelId) return;
+      const channel = db.channels.find((c) => c.id === channelId);
+      if (!channel || msg.scope !== "guild" || msg.targetId !== channelId) return;
+      if (!canModerateMessage(userId, msg)) return;
 
-    const room = callRoom(type, id);
-    socket.join(room);
+      msg.deleted = true;
+      msg.text = "";
+      msg.attachments = [];
+      msg.pinned = false;
+      await saveDb();
 
-    const peers = await io.in(room).fetchSockets();
-    const members = getCallPeers(peers, socket.id);
-
-    socket.emit("call:members", {
-      type,
-      id,
-      callId: callId || null,
-      members
-    });
-
-    socket.to(room).emit("call:user-joined", {
-      id: socket.id,
-      userId,
-      login: socket.data.login,
-      displayName: user ? (user.displayName || user.login) : socket.data.login
-    });
-  });
-
-  socket.on("call:leave", ({ type, id }) => {
-    const room = callRoom(type, id);
-    socket.leave(room);
-    socket.to(room).emit("call:user-left", {
-      id: socket.id,
-      userId
-    });
-  });
-
-  socket.on("call:signal", ({ to, data }) => {
-    io.to(to).emit("call:signal", {
-      from: socket.id,
-      data
-    });
+      io.to(guildRoom(channelId)).emit("chat:updated", { scope: "guild", targetId: channelId });
+    }
   });
 
   socket.on("disconnect", async () => {
-    const current = connectionCounts.get(userId) || 0;
-    const next = Math.max(0, current - 1);
-
-    if (next <= 0) connectionCounts.delete(userId);
-    else connectionCounts.set(userId, next);
+    const count = Math.max(0, (connectionCounts.get(userId) || 1) - 1);
+    if (count <= 0) connectionCounts.delete(userId);
+    else connectionCounts.set(userId, count);
 
     const sockets = userSockets.get(userId);
     if (sockets) {
@@ -500,20 +569,9 @@ io.on("connection", (socket) => {
     const u = db.users.find((x) => x.id === userId);
     if (u) {
       u.lastSeen = Date.now();
-      if ((connectionCounts.get(userId) || 0) === 0) {
-        u.online = false;
-      }
+      if ((connectionCounts.get(userId) || 0) === 0) u.online = false;
       await saveDb();
       broadcastPresence(u);
-    }
-
-    for (const room of socket.rooms) {
-      if (room.startsWith("call:")) {
-        socket.to(room).emit("call:user-left", {
-          id: socket.id,
-          userId
-        });
-      }
     }
   });
 });
@@ -530,23 +588,35 @@ setInterval(async () => {
     }
   }
 
-  if (changed) {
-    await saveDb();
-  }
+  if (changed) await saveDb();
 }, 30000);
 
+function authRequired(req, res, next) {
+  const user = getAuthUser(req);
+  if (!user) return res.status(401).json({ error: "unauthorized" });
+  req.user = user;
+  next();
+}
+
 app.post("/api/register", async (req, res) => {
-  const { login, password, displayName } = req.body || {};
+  const {
+    login,
+    password,
+    displayName,
+    language = "ru",
+    theme = "midnight",
+    accent = "indigo"
+  } = req.body || {};
+
   const cleanLogin = String(login || "").trim();
   const cleanPassword = String(password || "").trim();
   const cleanName = String(displayName || "").trim();
+  const lang = language === "en" ? "en" : "ru";
 
-  if (cleanLogin.length < 3 || cleanPassword.length < 4) {
-    return res.status(400).json({ error: "Логин минимум 3 символа, пароль минимум 4." });
-  }
-
-  if (db.users.some((u) => makeSafeLoginId(u.login) === makeSafeLoginId(cleanLogin))) {
-    return res.status(400).json({ error: "Такой логин уже занят." });
+  if (cleanLogin.length < 3) return res.status(400).json({ error: "login_min" });
+  if (cleanPassword.length < 4) return res.status(400).json({ error: "password_min" });
+  if (db.users.some((u) => safeLogin(u.login) === safeLogin(cleanLogin))) {
+    return res.status(400).json({ error: "login_taken" });
   }
 
   const user = {
@@ -554,9 +624,10 @@ app.post("/api/register", async (req, res) => {
     login: cleanLogin,
     passwordHash: hashPassword(cleanPassword),
     displayName: cleanName || cleanLogin,
-    accent: "indigo",
-    theme: "midnight",
-    compact: false,
+    language: lang,
+    theme,
+    accent,
+    avatarUrl: "",
     online: false,
     lastSeen: Date.now(),
     createdAt: Date.now()
@@ -577,13 +648,11 @@ app.post("/api/login", async (req, res) => {
 
   const user = db.users.find(
     (u) =>
-      makeSafeLoginId(u.login) === makeSafeLoginId(cleanLogin) &&
+      safeLogin(u.login) === safeLogin(cleanLogin) &&
       u.passwordHash === hashPassword(cleanPassword)
   );
 
-  if (!user) {
-    return res.status(400).json({ error: "Неверный логин или пароль." });
-  }
+  if (!user) return res.status(400).json({ error: "bad_login" });
 
   const token = makeToken();
   db.sessions.push({ token, userId: user.id, createdAt: Date.now() });
@@ -592,213 +661,372 @@ app.post("/api/login", async (req, res) => {
   res.json({ token, user: publicUser(user) });
 });
 
-app.get("/api/me", (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
-
+app.get("/api/me", authRequired, (req, res) => {
   res.json({
-    user: publicUser(user),
-    conversations: getConversations(user.id)
+    user: publicUser(req.user),
+    guilds: getGuildsFor(req.user.id),
+    dms: getDmList(req.user.id)
   });
 });
 
-app.patch("/api/settings", async (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
+app.patch("/api/settings", authRequired, async (req, res) => {
+  const { displayName, language, theme, accent } = req.body || {};
 
-  const { displayName, accent, theme, compact } = req.body || {};
-  if (typeof displayName === "string") user.displayName = displayName.trim().slice(0, 24) || user.login;
-  if (typeof accent === "string") user.accent = accent;
-  if (typeof theme === "string") user.theme = theme;
-  if (typeof compact === "boolean") user.compact = compact;
+  if (typeof displayName === "string") {
+    req.user.displayName = displayName.trim().slice(0, 24) || req.user.login;
+  }
+  if (language === "ru" || language === "en") {
+    req.user.language = language;
+  }
+  if (typeof theme === "string") {
+    req.user.theme = theme;
+  }
+  if (typeof accent === "string") {
+    req.user.accent = accent;
+  }
 
   await saveDb();
-  res.json({ user: publicUser(user) });
+  res.json({ user: publicUser(req.user) });
 });
 
-app.get("/api/search", (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
+app.post("/api/avatar", authRequired, avatarUpload.single("avatar"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "no_file" });
 
+  req.user.avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  await saveDb();
+
+  res.json({
+    user: publicUser(req.user)
+  });
+});
+
+app.post("/api/upload", authRequired, fileUpload.array("files", 10), async (req, res) => {
+  const files = Array.isArray(req.files) ? req.files : [];
+  const attachments = files.map((file) => ({
+    name: file.originalname,
+    url: `/uploads/files/${file.filename}`,
+    size: file.size,
+    type: file.mimetype
+  }));
+
+  res.json({ attachments });
+});
+
+app.get("/api/search", authRequired, (req, res) => {
   const q = String(req.query.q || "").trim().toLowerCase();
   if (!q) return res.json([]);
 
   const list = db.users
-    .filter((u) => u.id !== user.id)
+    .filter((u) => u.id !== req.user.id)
     .filter((u) =>
       u.login.toLowerCase().includes(q) ||
-      u.id.toLowerCase().includes(q)
+      u.id.toLowerCase().includes(q) ||
+      (u.displayName || "").toLowerCase().includes(q)
     )
     .slice(0, 20)
-    .map(publicUser);
+    .map((u) => ({
+      ...publicUser(u),
+      isFriend: db.friendships.some(
+        (f) =>
+          f.status === "accepted" &&
+          ((f.a === req.user.id && f.b === u.id) || (f.a === u.id && f.b === req.user.id))
+      )
+    }));
 
   res.json(list);
 });
 
-app.post("/api/dm", async (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
-
+app.post("/api/dm", authRequired, async (req, res) => {
   const { query } = req.body || {};
   const q = String(query || "").trim().toLowerCase();
-  if (!q) return res.status(400).json({ error: "Введите логин или ID" });
 
   const target = db.users.find(
-    (u) => u.id.toLowerCase() === q || u.login.toLowerCase() === q
+    (u) =>
+      u.id.toLowerCase() === q ||
+      u.login.toLowerCase() === q ||
+      (u.displayName || "").toLowerCase() === q
   );
 
-  if (!target) return res.status(404).json({ error: "Пользователь не найден" });
-  if (target.id === user.id) return res.status(400).json({ error: "Нельзя открыть чат с собой" });
+  if (!target) return res.status(404).json({ error: "not_found" });
+  if (target.id === req.user.id) return res.status(400).json({ error: "self_chat" });
 
-  const changed = ensureFriendship(user.id, target.id);
-  if (changed) {
-    await saveDb();
-    refreshFriends(user.id);
-    refreshFriends(target.id);
-  }
-
-  const dmId = pairKey(user.id, target.id);
-
-  res.json({
-    ok: true,
-    dmId,
-    target: publicUser(target)
-  });
-});
-
-app.post("/api/friends/add", async (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
-
-  const { query } = req.body || {};
-  const q = String(query || "").trim().toLowerCase();
-  if (!q) return res.status(400).json({ error: "Введите логин или ID" });
-
-  const target = db.users.find(
-    (u) => u.id.toLowerCase() === q || u.login.toLowerCase() === q
+  const exists = db.friendships.find(
+    (f) =>
+      f.status === "accepted" &&
+      ((f.a === req.user.id && f.b === target.id) || (f.a === target.id && f.b === req.user.id))
   );
-
-  if (!target) return res.status(404).json({ error: "Пользователь не найден" });
-  if (target.id === user.id) return res.status(400).json({ error: "Нельзя добавить себя" });
-
-  const changed = ensureFriendship(user.id, target.id);
-  if (changed) {
+  if (!exists) {
+    db.friendships.push({
+      a: req.user.id,
+      b: target.id,
+      status: "accepted",
+      createdAt: Date.now()
+    });
     await saveDb();
-    refreshFriends(user.id);
-    refreshFriends(target.id);
+    refreshDmsFor(req.user.id);
+    refreshDmsFor(target.id);
   }
 
   res.json({
     ok: true,
-    friend: publicUser(target),
-    dmId: pairKey(user.id, target.id)
+    room: pairKey(req.user.id, target.id),
+    peer: publicUser(target)
   });
 });
 
-app.post("/api/groups", async (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
+app.get("/api/messages", authRequired, (req, res) => {
+  const scope = String(req.query.scope || "");
 
+  if (scope === "dm") {
+    const peerId = String(req.query.peerId || "");
+    const peer = db.users.find((u) => u.id === peerId);
+    if (!peer) return res.status(404).json({ error: "not_found" });
+
+    const room = pairKey(req.user.id, peerId);
+    const messages = messagesForDm(req.user.id, peerId);
+
+    return res.json({
+      scope: "dm",
+      room,
+      peer: publicUser(peer),
+      messages
+    });
+  }
+
+  if (scope === "guild") {
+    const channelId = String(req.query.channelId || "");
+    const channel = db.channels.find((c) => c.id === channelId);
+    if (!channel) return res.status(404).json({ error: "not_found" });
+    if (!isGuildMember(req.user.id, channel.guildId)) return res.status(403).json({ error: "no_access" });
+
+    const guild = db.guilds.find((g) => g.id === channel.guildId);
+    const messages = messagesForGuild(channelId);
+
+    return res.json({
+      scope: "guild",
+      guild: guild ? { id: guild.id, name: guild.name } : null,
+      channel: { id: channel.id, guildId: channel.guildId, name: channel.name },
+      messages
+    });
+  }
+
+  res.json({ messages: [] });
+});
+
+app.get("/api/pins", authRequired, (req, res) => {
+  const scope = String(req.query.scope || "");
+
+  if (scope === "dm") {
+    const peerId = String(req.query.peerId || "");
+    const peer = db.users.find((u) => u.id === peerId);
+    if (!peer) return res.status(404).json({ error: "not_found" });
+
+    return res.json({
+      pins: pinsForDm(req.user.id, peerId)
+    });
+  }
+
+  if (scope === "guild") {
+    const channelId = String(req.query.channelId || "");
+    const channel = db.channels.find((c) => c.id === channelId);
+    if (!channel) return res.status(404).json({ error: "not_found" });
+    if (!isGuildMember(req.user.id, channel.guildId)) return res.status(403).json({ error: "no_access" });
+
+    return res.json({
+      pins: pinsForGuild(channelId)
+    });
+  }
+
+  res.json({ pins: [] });
+});
+
+app.post("/api/guilds", authRequired, async (req, res) => {
   const { name } = req.body || {};
-  const clean = String(name || "").trim().slice(0, 30);
-  if (!clean) return res.status(400).json({ error: "Введите название группы" });
+  const clean = String(name || "").trim().slice(0, 40);
+  if (!clean) return res.status(400).json({ error: "empty_name" });
 
-  const group = {
+  const guild = {
     id: makeId5(),
     name: clean,
-    ownerId: user.id,
+    ownerId: req.user.id,
     createdAt: Date.now()
   };
+  db.guilds.push(guild);
+  db.guildMembers.push({
+    guildId: guild.id,
+    userId: req.user.id,
+    role: "owner",
+    createdAt: Date.now()
+  });
 
-  db.groups.push(group);
-  db.groupMembers.push({ groupId: group.id, userId: user.id, createdAt: Date.now() });
+  const channel = {
+    id: makeId5(),
+    guildId: guild.id,
+    name: "general",
+    createdAt: Date.now()
+  };
+  db.channels.push(channel);
+
   await saveDb();
+  refreshGuildsFor(req.user.id);
 
-  res.json({ group });
+  res.json({
+    guild: {
+      id: guild.id,
+      name: guild.name,
+      ownerId: guild.ownerId,
+      role: "owner",
+      channels: [channel]
+    }
+  });
 });
 
-app.get("/api/groups/:id/members", (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
+app.get("/api/guilds/:id/channels", authRequired, (req, res) => {
+  const guildId = req.params.id;
+  if (!isGuildMember(req.user.id, guildId)) return res.status(403).json({ error: "no_access" });
 
-  const groupId = req.params.id;
-  if (!canAccessChannel(user.id, "group", groupId)) {
-    return res.status(403).json({ error: "Нет доступа" });
-  }
+  res.json({
+    channels: getGuildChannels(guildId).map((c) => ({
+      id: c.id,
+      guildId: c.guildId,
+      name: c.name
+    }))
+  });
+});
 
-  const members = db.groupMembers
-    .filter((m) => m.groupId === groupId)
-    .map((m) => db.users.find((u) => u.id === m.userId))
-    .filter(Boolean)
-    .map(publicUser);
+app.post("/api/guilds/:id/channels", authRequired, async (req, res) => {
+  const guildId = req.params.id;
+  if (!canManageGuild(req.user.id, guildId)) return res.status(403).json({ error: "no_access" });
+
+  const { name } = req.body || {};
+  const clean = String(name || "").trim().slice(0, 40);
+  if (!clean) return res.status(400).json({ error: "empty_name" });
+
+  const channel = {
+    id: makeId5(),
+    guildId,
+    name: clean,
+    createdAt: Date.now()
+  };
+  db.channels.push(channel);
+  await saveDb();
+
+  broadcastToGuildMembers(guildId, "guilds:refresh", {});
+  res.json({ channel });
+});
+
+app.get("/api/guilds/:id/members", authRequired, (req, res) => {
+  const guildId = req.params.id;
+  if (!isGuildMember(req.user.id, guildId)) return res.status(403).json({ error: "no_access" });
+
+  const members = db.guildMembers
+    .filter((m) => m.guildId === guildId)
+    .map((m) => {
+      const user = db.users.find((u) => u.id === m.userId);
+      if (!user) return null;
+      return {
+        ...publicUser(user),
+        role: m.role || "member"
+      };
+    })
+    .filter(Boolean);
 
   res.json({ members });
 });
 
-app.post("/api/groups/:id/invite", async (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
+app.post("/api/guilds/:id/invite", authRequired, async (req, res) => {
+  const guildId = req.params.id;
+  if (!canManageGuild(req.user.id, guildId)) return res.status(403).json({ error: "no_access" });
 
-  const groupId = req.params.id;
   const { query } = req.body || {};
   const q = String(query || "").trim().toLowerCase();
-
-  const group = db.groups.find((g) => g.id === groupId);
-  if (!group) return res.status(404).json({ error: "Группа не найдена" });
-  if (!canAccessChannel(user.id, "group", groupId)) {
-    return res.status(403).json({ error: "Нет доступа" });
-  }
+  if (!q) return res.status(400).json({ error: "empty_query" });
 
   const target = db.users.find(
-    (u) => u.id.toLowerCase() === q || u.login.toLowerCase() === q
+    (u) => u.id.toLowerCase() === q || u.login.toLowerCase() === q || (u.displayName || "").toLowerCase() === q
   );
-  if (!target) return res.status(404).json({ error: "Пользователь не найден" });
+  if (!target) return res.status(404).json({ error: "not_found" });
 
-  const exists = db.groupMembers.some(
-    (m) => m.groupId === groupId && m.userId === target.id
-  );
+  const exists = db.guildMembers.some((m) => m.guildId === guildId && m.userId === target.id);
   if (!exists) {
-    db.groupMembers.push({ groupId, userId: target.id, createdAt: Date.now() });
+    db.guildMembers.push({
+      guildId,
+      userId: target.id,
+      role: "member",
+      createdAt: Date.now()
+    });
     await saveDb();
+    refreshGuildsFor(target.id);
+    broadcastToGuildMembers(guildId, "guild:members:updated", { guildId });
   }
 
-  res.json({ ok: true, member: publicUser(target) });
+  res.json({ ok: true });
 });
 
-app.get("/api/messages", (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "Не авторизован" });
+app.put("/api/guilds/:id/members/:memberId/role", authRequired, async (req, res) => {
+  const guildId = req.params.id;
+  const memberId = req.params.memberId;
+  const { role } = req.body || {};
 
-  const type = String(req.query.type || "");
-  const id = String(req.query.id || "");
-  if (!canAccessChannel(user.id, type, id)) {
-    return res.status(403).json({ error: "Нет доступа" });
+  if (!canEditRoles(req.user.id, guildId)) return res.status(403).json({ error: "no_access" });
+  if (!["member", "admin"].includes(role)) return res.status(400).json({ error: "bad_role" });
+
+  const row = db.guildMembers.find((m) => m.guildId === guildId && m.userId === memberId);
+  if (!row) return res.status(404).json({ error: "not_found" });
+
+  if (row.role === "owner") return res.status(400).json({ error: "cannot_edit_owner" });
+
+  row.role = role;
+  await saveDb();
+
+  broadcastToGuildMembers(guildId, "guild:members:updated", { guildId });
+  res.json({ ok: true, role });
+});
+
+app.post("/api/messages/:id/pin", authRequired, async (req, res) => {
+  const msg = db.messages.find((m) => m.id === req.params.id);
+  if (!msg) return res.status(404).json({ error: "not_found" });
+  if (!canPinMessage(req.user.id, msg)) return res.status(403).json({ error: "no_access" });
+
+  msg.pinned = !msg.pinned;
+  await saveDb();
+
+  if (msg.scope === "dm") {
+    const [a, b] = msg.targetId.split("_");
+    io.to(dmRoom(a, b)).emit("chat:updated", { scope: "dm", targetId: msg.targetId });
+  } else if (msg.scope === "guild") {
+    io.to(guildRoom(msg.targetId)).emit("chat:updated", { scope: "guild", targetId: msg.targetId });
   }
 
-  const messages = db.messages
-    .filter((m) => m.type === type && m.channelId === id)
-    .sort((a, b) => a.createdAt - b.createdAt)
-    .slice(-250)
-    .map((m) => {
-      const sender = db.users.find((u) => u.id === m.senderId);
-      return {
-        id: m.id,
-        type: m.type,
-        channelId: m.channelId,
-        senderId: m.senderId,
-        senderName: sender ? sender.displayName || sender.login : "Неизвестно",
-        senderLogin: sender ? sender.login : "unknown",
-        text: m.text,
-        createdAt: m.createdAt
-      };
-    });
+  res.json({ ok: true, pinned: msg.pinned });
+});
 
-  res.json({ messages });
+app.delete("/api/messages/:id", authRequired, async (req, res) => {
+  const msg = db.messages.find((m) => m.id === req.params.id);
+  if (!msg) return res.status(404).json({ error: "not_found" });
+  if (!canModerateMessage(req.user.id, msg)) return res.status(403).json({ error: "no_access" });
+
+  msg.deleted = true;
+  msg.text = "";
+  msg.attachments = [];
+  msg.pinned = false;
+  await saveDb();
+
+  if (msg.scope === "dm") {
+    const [a, b] = msg.targetId.split("_");
+    io.to(dmRoom(a, b)).emit("chat:updated", { scope: "dm", targetId: msg.targetId });
+    refreshDmsFor(a);
+    refreshDmsFor(b);
+  } else if (msg.scope === "guild") {
+    io.to(guildRoom(msg.targetId)).emit("chat:updated", { scope: "guild", targetId: msg.targetId });
+  }
+
+  res.json({ ok: true });
 });
 
 (async () => {
   await loadDb();
   server.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 })();
