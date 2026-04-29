@@ -356,6 +356,7 @@ async function register() {
 
   const data = await res.json();
   if (!res.ok) return showAuthError(data.error);
+
   finishAuth(data.token, data.user);
 }
 
@@ -371,6 +372,7 @@ async function login() {
 
   const data = await res.json();
   if (!res.ok) return showAuthError(data.error);
+
   finishAuth(data.token, data.user);
 }
 
@@ -755,53 +757,6 @@ async function loadMessagesForCurrentChat() {
   await renderPins();
 }
 
-async function renderPins() {
-  el.pinsList.innerHTML = "";
-  if (!state.currentChat) return;
-
-  let res;
-  if (state.currentChat.scope === "dm") {
-    res = await api(`/api/pins?scope=dm&peerId=${encodeURIComponent(state.currentChat.peerId)}`);
-  } else {
-    res = await api(`/api/pins?scope=guild&channelId=${encodeURIComponent(state.currentChat.id)}`);
-  }
-
-  const data = await res.json();
-  if (!res.ok) return;
-
-  state.currentPins = data.pins || [];
-  if (!state.currentPins.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = state.locale === "ru" ? "Нет закрепов" : "No pins yet";
-    el.pinsList.appendChild(empty);
-    return;
-  }
-
-  state.currentPins.forEach((p) => {
-    const card = document.createElement("div");
-    card.className = "pin-card";
-    card.innerHTML = `
-      ${avatarMarkup({ displayName: p.senderName, login: p.senderLogin, avatarUrl: p.senderAvatar }, "sm")}
-      <div class="pin-main">
-        <div class="pin-title">📌 ${escapeHtml(p.senderName)}</div>
-        <div class="pin-sub">${escapeHtml(p.deleted ? (state.locale === "ru" ? "Сообщение удалено" : "Message deleted") : p.text || "")}</div>
-        <button class="pin-go" type="button">${escapeHtml(state.locale === "ru" ? "Перейти" : "Go to message")}</button>
-      </div>
-    `;
-    card.querySelector("button").onclick = () => {
-      const target = document.getElementById(`message-${p.id}`);
-      if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
-    };
-    el.pinsList.appendChild(card);
-  });
-}
-
-function autoGrowTextarea() {
-  el.messageInput.style.height = "auto";
-  el.messageInput.style.height = Math.min(170, el.messageInput.scrollHeight) + "px";
-}
-
 function renderAttachmentPreview() {
   el.attachmentPreview.innerHTML = "";
   state.pendingFiles.forEach((f, idx) => {
@@ -1039,14 +994,8 @@ async function renderMembers() {
   if (state.currentChat.scope === "dm") {
     const peer = state.currentChat.peer;
     const items = [
-      {
-        ...state.me,
-        role: "self"
-      },
-      {
-        ...peer,
-        role: "friend"
-      }
+      { ...state.me, role: "self" },
+      { ...peer, role: "friend" }
     ];
 
     items.forEach((u) => {
@@ -1164,12 +1113,7 @@ function applyCapabilities() {
 
 async function togglePin(messageId) {
   if (!state.currentChat) return;
-
-  if (state.currentChat.scope === "dm") {
-    await api(`/api/messages/${encodeURIComponent(messageId)}/pin`, { method: "POST" });
-  } else {
-    await api(`/api/messages/${encodeURIComponent(messageId)}/pin`, { method: "POST" });
-  }
+  await api(`/api/messages/${encodeURIComponent(messageId)}/pin`, { method: "POST" });
 }
 
 async function deleteMessage(messageId) {
@@ -1360,7 +1304,7 @@ function connectSocket() {
     if (!state.currentChat) return;
     if (state.currentChat.scope !== payload.scope) return;
 
-    if (payload.scope === "dm" && state.currentChat.peerId) {
+    if (payload.scope === "dm") {
       const room = pairKey(state.me.id, state.currentChat.peerId);
       if (payload.targetId !== room) return;
     }
@@ -1492,7 +1436,7 @@ function bindUI() {
     updateRailActive();
   };
 
-  el.createGuildBtn.onclick = showCreateGuildHint;
+  el.createGuildBtn.onclick = createGuild;
   el.guildCreateBtn2.onclick = createGuild;
   el.channelCreateBtn.onclick = createChannel;
   el.inviteBtn.onclick = inviteToGuild;
@@ -1536,9 +1480,7 @@ function bindUI() {
     const card = e.target.closest(".msg");
     if (!card) return;
     const msgId = card.dataset.msgId;
-    const msg = (state.currentChat?.scope === "dm" || state.currentChat?.scope === "guild")
-      ? getVisibleMessageById(msgId)
-      : null;
+    const msg = getCurrentMessageById(msgId);
     if (!msg) return;
     e.preventDefault();
     openMessageMenu(msg, e.pageX, e.pageY);
@@ -1553,21 +1495,14 @@ function bindUI() {
   });
 }
 
-function getVisibleMessageById(id) {
-  const node = [...el.messages.querySelectorAll(".msg")].find((m) => m.dataset.msgId === id);
+function getCurrentMessageById(id) {
+  if (!state.currentChat) return null;
+  const nodes = [...el.messages.querySelectorAll(".msg")];
+  const node = nodes.find((n) => n.dataset.msgId === id);
   if (!node) return null;
 
-  const all = [];
-  [...el.messages.querySelectorAll(".msg")].forEach((m) => {
-    const mid = m.dataset.msgId;
-    if (mid) all.push(mid);
-  });
-
-  if (!state.currentChat) return null;
-
-  const cached = state.currentPins.find((p) => p.id === id);
-  if (cached) return cached;
-
+  const found = state.currentPins.find((p) => p.id === id);
+  if (found) return found;
   return null;
 }
 
