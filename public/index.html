@@ -9,177 +9,221 @@
 <body>
   <div id="authScreen" class="auth-screen">
     <div class="auth-card glass">
+      <div class="auth-topbar">
+        <div class="field compact lang-field">
+          <label data-i18n="language_label">Язык / Language</label>
+          <select id="authLang">
+            <option value="ru" data-i18n="lang_ru">Русский</option>
+            <option value="en" data-i18n="lang_en">English</option>
+          </select>
+        </div>
+      </div>
+
       <div class="brand">
         <div class="brand-mark">M</div>
         <div>
-          <div class="brand-title">Mesanger</div>
-          <div class="brand-sub">Чаты, группы, звонки</div>
+          <div class="brand-title" data-i18n="auth_title">Mesanger</div>
+          <div class="brand-sub" data-i18n="auth_sub">Чаты, серверы, закрепы и файлы</div>
         </div>
       </div>
 
       <div class="segmented">
-        <button id="tabLogin" class="seg active">Вход</button>
-        <button id="tabRegister" class="seg">Регистрация</button>
+        <button id="tabLogin" class="seg active" type="button" data-i18n="tab_login">Вход</button>
+        <button id="tabRegister" class="seg" type="button" data-i18n="tab_register">Регистрация</button>
       </div>
 
       <div class="field">
-        <label>Логин</label>
-        <input id="authLogin" placeholder="Логин" autocomplete="username" />
+        <label data-i18n="login_label">Логин</label>
+        <input id="authLogin" type="text" placeholder="Логин" data-i18n-placeholder="login_placeholder" autocomplete="username" />
       </div>
 
       <div class="field" id="displayNameWrap" style="display:none;">
-        <label>Имя в профиле</label>
-        <input id="authDisplayName" placeholder="Никнейм" autocomplete="nickname" />
+        <label data-i18n="display_name_label">Имя профиля</label>
+        <input id="authDisplayName" type="text" placeholder="Имя профиля" data-i18n-placeholder="display_name_placeholder" autocomplete="nickname" />
       </div>
 
       <div class="field">
-        <label>Пароль</label>
-        <input id="authPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
+        <label data-i18n="password_label">Пароль</label>
+        <input id="authPassword" type="password" placeholder="Пароль" data-i18n-placeholder="password_placeholder" autocomplete="current-password" />
       </div>
 
-      <button id="authMainBtn" class="primary-btn">Войти</button>
-      <button id="authAltBtn" class="ghost-btn">Создать аккаунт</button>
+      <button id="authMainBtn" class="primary-btn" type="button" data-i18n="login_button">Войти</button>
+      <button id="authAltBtn" class="ghost-btn" type="button" data-i18n="register_button">Создать аккаунт</button>
+
       <div id="authError" class="error-text"></div>
     </div>
   </div>
 
   <div id="app" class="app hidden">
     <aside class="rail glass">
-      <button class="rail-btn active" data-tab="chats">💬</button>
-      <button class="rail-btn" data-tab="find">🔎</button>
-      <button class="rail-btn" data-tab="groups">👥</button>
-      <button class="rail-btn" data-tab="settings">⚙️</button>
+      <button id="homeBtn" class="rail-btn active" type="button" title="Home">🏠</button>
+      <div id="guildRailList" class="guild-rail-list"></div>
+      <button id="createGuildBtn" class="rail-btn" type="button" title="Create server">➕</button>
       <div class="rail-spacer"></div>
-      <button id="logoutBtn" class="rail-btn danger">↩</button>
+      <button id="settingsBtn" class="rail-btn" type="button" title="Settings">⚙️</button>
+      <button id="logoutBtn" class="rail-btn danger" type="button" title="Logout">↩</button>
     </aside>
 
-    <aside class="list-panel glass">
-      <div class="panel-top">
-        <div>
-          <div id="meName" class="panel-title">Профиль</div>
-          <div id="meInfo" class="panel-sub">—</div>
+    <aside class="sidebar glass">
+      <div class="sidebar-top">
+        <div class="me-row">
+          <div id="meAvatar" class="avatar avatar-lg"></div>
+          <div>
+            <div id="meName" class="panel-title">Профиль</div>
+            <div id="meInfo" class="panel-sub">—</div>
+          </div>
         </div>
       </div>
 
-      <div id="tabChats" class="tab-view active">
-        <div class="section-head">Чаты</div>
-        <div id="chatList" class="list"></div>
-      </div>
+      <div id="homeView" class="sidebar-view active">
+        <div class="section-head" data-i18n="dms_title">Личные чаты</div>
+        <div id="dmList" class="list"></div>
+        <div id="emptyDms" class="empty-state hidden" data-i18n="no_chats">Пока нет чатов</div>
 
-      <div id="tabFind" class="tab-view">
-        <div class="section-head">Найти друзей</div>
+        <div class="section-head" data-i18n="find_title">Найти друзей</div>
         <div class="inline">
-          <input id="findInput" placeholder="Логин или ID" />
-          <button id="findBtn" class="small-btn">Найти</button>
+          <input id="findInput" type="text" placeholder="Логин, имя или ID" data-i18n-placeholder="find_placeholder" />
+          <button id="findBtn" class="small-btn" type="button" data-i18n="find_button">Найти</button>
         </div>
         <div id="findResults" class="list"></div>
-      </div>
 
-      <div id="tabGroups" class="tab-view">
-        <div class="section-head">Группы</div>
+        <div class="section-head" data-i18n="create_guild_title">Создать сервер</div>
         <div class="inline">
-          <input id="groupNameInput" placeholder="Название группы" />
-          <button id="createGroupBtn" class="small-btn">Создать</button>
-        </div>
-        <div class="section-mini">Ваши группы</div>
-        <div id="groupList" class="list"></div>
-        <div class="section-mini">Пригласить в текущую группу</div>
-        <div class="inline">
-          <input id="inviteInput" placeholder="Логин или ID" />
-          <button id="inviteBtn" class="small-btn">Добавить</button>
+          <input id="guildNameInput" type="text" placeholder="Название сервера" data-i18n-placeholder="guild_name_placeholder" />
+          <button id="guildCreateBtn2" class="small-btn" type="button" data-i18n="create_button">Создать</button>
         </div>
       </div>
 
-      <div id="tabSettings" class="tab-view">
-        <div class="section-head">Настройки</div>
-        <div class="field compact">
-          <label>Имя профиля</label>
-          <input id="setDisplayName" />
+      <div id="guildView" class="sidebar-view">
+        <div class="section-head" id="guildTitleHead">Server</div>
+        <div class="section-mini" data-i18n="channels_title">Каналы</div>
+        <div id="channelList" class="list"></div>
+
+        <div class="section-head" data-i18n="create_channel_title">Создать канал</div>
+        <div class="inline">
+          <input id="channelNameInput" type="text" placeholder="Название канала" data-i18n-placeholder="channel_name_placeholder" />
+          <button id="channelCreateBtn" class="small-btn" type="button" data-i18n="create_button">Создать</button>
         </div>
-        <div class="field compact">
-          <label>Акцент</label>
-          <select id="setAccent">
-            <option value="indigo">Indigo</option>
-            <option value="pink">Pink</option>
-            <option value="cyan">Cyan</option>
-            <option value="lime">Lime</option>
-            <option value="orange">Orange</option>
-          </select>
+
+        <div class="section-head" data-i18n="invite_title">Пригласить</div>
+        <div class="inline">
+          <input id="inviteInput" type="text" placeholder="Логин или ID" data-i18n-placeholder="invite_placeholder" />
+          <button id="inviteBtn" class="small-btn" type="button" data-i18n="invite_button">Добавить</button>
         </div>
-        <div class="field compact">
-          <label>Тема</label>
-          <select id="setTheme">
-            <option value="midnight">Midnight</option>
-            <option value="dark">Dark</option>
-            <option value="ocean">Ocean</option>
-            <option value="violet">Violet</option>
-            <option value="light">Light</option>
-          </select>
+      </div>
+
+      <div class="authors-card">
+        <div class="author-row">
+          <div class="author-dot"></div>
+          <div>
+            <div class="author-name">Mesanger</div>
+            <div class="author-sub" data-i18n="authors_sub">Учебный проект</div>
+          </div>
         </div>
-        <label class="toggle">
-          <input id="setCompact" type="checkbox" />
-          <span>Компактный режим</span>
-        </label>
-        <button id="saveSettingsBtn" class="primary-btn full">Сохранить</button>
+        <div class="author-row">
+          <div class="author-dot"></div>
+          <div>
+            <div class="author-name">AI helper</div>
+            <div class="author-sub" data-i18n="authors_sub2">Помощь и код</div>
+          </div>
+        </div>
       </div>
     </aside>
 
     <main class="chat-panel glass">
       <header class="chat-top">
-        <div>
-          <div id="chatTitle" class="chat-title">Выбери чат</div>
-          <div id="chatSub" class="chat-sub">Слева открой диалог, группу или поиск друзей</div>
-        </div>
-        <div class="chat-actions">
-          <button id="voiceCallBtn" class="action-btn">🎙 Аудиосвязь</button>
-          <button id="videoCallBtn" class="action-btn">📹 Видеосвязь</button>
+        <div class="chat-head-row">
+          <div>
+            <div id="chatTitle" class="chat-title" data-i18n="chat_select_title">Выбери чат</div>
+            <div id="chatSub" class="chat-sub" data-i18n="chat_select_sub">Слева открой диалог или канал</div>
+          </div>
+          <button id="pinsBtn" class="action-btn" type="button" data-i18n="pins_button">📌 Закрепы</button>
         </div>
       </header>
 
-      <section id="callStage" class="call-stage hidden">
-        <div class="call-head">
-          <div>
-            <div class="call-title">Звонок</div>
-            <div id="callSub" class="call-sub">Ожидание соединения</div>
-          </div>
-        </div>
-
-        <div class="call-grid">
-          <div class="video-card">
-            <div class="video-label" id="localLabel">Ты</div>
-            <video id="localVideo" autoplay muted playsinline></video>
-          </div>
-
-          <div id="remoteVideos" class="remote-grid"></div>
-        </div>
-
-        <div class="call-controls">
-          <button id="hangupBtn" class="action-btn danger">❌ Отклонить / Завершить</button>
-          <button id="screenBtn" class="action-btn">🖥 Показать / скрыть демку</button>
-          <button id="cameraBtn" class="action-btn">📷 Камера</button>
-          <button id="micBtn" class="action-btn">🎤 Микрофон</button>
-        </div>
+      <section id="messages" class="messages">
+        <div id="emptyMessages" class="empty-state center" data-i18n="no_messages">Сообщений пока нет</div>
       </section>
 
-      <section id="messages" class="messages"></section>
-
       <footer class="composer">
-        <textarea id="messageInput" rows="1" placeholder="Написать сообщение..."></textarea>
-        <button id="sendBtn" class="send-btn">Отправить</button>
+        <div class="composer-top">
+          <button id="attachBtn" class="action-btn" type="button" data-i18n="attach_btn">📎 Файл</button>
+          <input id="fileInput" type="file" multiple hidden />
+          <div id="attachmentPreview" class="attachment-preview"></div>
+        </div>
+        <div class="composer-bottom">
+          <textarea id="messageInput" rows="1" placeholder="Написать сообщение..." data-i18n-placeholder="message_placeholder"></textarea>
+          <button id="sendBtn" class="send-btn" type="button" data-i18n="send_button">Отправить</button>
+        </div>
       </footer>
     </main>
+
+    <aside class="members-panel glass">
+      <div class="section-head" data-i18n="members_title">Участники</div>
+      <div id="membersList" class="members-list"></div>
+
+      <div class="section-head" data-i18n="pins_title">Закрепы</div>
+      <div id="pinsList" class="pins-list"></div>
+    </aside>
   </div>
 
-  <div id="incomingCallModal" class="modal hidden">
-    <div class="modal-card glass">
-      <div class="modal-title">Входящий звонок</div>
-      <div id="incomingCallText" class="modal-text">—</div>
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card glass wide">
+      <div class="modal-title" data-i18n="settings_title">Настройки</div>
+      <div class="modal-subtitle" data-i18n="settings_sub">Язык, тема, профиль и аватар</div>
+
+      <div class="avatar-upload-row">
+        <div id="avatarPreview" class="avatar avatar-xl"></div>
+        <div class="avatar-actions">
+          <button id="avatarPickBtn" class="primary-btn" type="button" data-i18n="avatar_pick">Загрузить аватар</button>
+          <input id="avatarInput" type="file" accept="image/*" hidden />
+          <div class="small-note" data-i18n="avatar_note">Квадратная картинка лучше смотрится</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label data-i18n="settings_display_name">Имя профиля</label>
+        <input id="modalDisplayName" type="text" />
+      </div>
+
+      <div class="field">
+        <label data-i18n="settings_language">Язык</label>
+        <select id="modalLang">
+          <option value="ru" data-i18n="lang_ru">Русский</option>
+          <option value="en" data-i18n="lang_en">English</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label data-i18n="settings_theme">Тема</label>
+        <select id="modalTheme">
+          <option value="midnight" data-i18n="theme_midnight">Midnight</option>
+          <option value="dark" data-i18n="theme_dark">Dark</option>
+          <option value="ocean" data-i18n="theme_ocean">Ocean</option>
+          <option value="violet" data-i18n="theme_violet">Violet</option>
+          <option value="light" data-i18n="theme_light">Light</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label data-i18n="settings_accent">Акцент</label>
+        <select id="modalAccent">
+          <option value="indigo" data-i18n="accent_indigo">Indigo</option>
+          <option value="pink" data-i18n="accent_pink">Pink</option>
+          <option value="cyan" data-i18n="accent_cyan">Cyan</option>
+          <option value="lime" data-i18n="accent_lime">Lime</option>
+          <option value="orange" data-i18n="accent_orange">Orange</option>
+        </select>
+      </div>
+
       <div class="modal-actions">
-        <button id="acceptCallBtn" class="primary-btn">Принять</button>
-        <button id="rejectCallBtn" class="ghost-btn">Отклонить</button>
+        <button id="saveModalSettingsBtn" class="primary-btn" type="button" data-i18n="save_settings">Сохранить</button>
+        <button id="closeSettingsBtn" class="ghost-btn" type="button" data-i18n="close_btn">Закрыть</button>
       </div>
     </div>
   </div>
+
+  <div id="messageActionsMenu" class="message-actions-menu hidden"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
