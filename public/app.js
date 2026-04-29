@@ -1,98 +1,264 @@
+const i18n = {
+  ru: {
+    language_label: "Язык / Language",
+    lang_ru: "Русский",
+    lang_en: "English",
+    auth_title: "Mesanger",
+    auth_sub: "Чаты, серверы, закрепы и файлы",
+    tab_login: "Вход",
+    tab_register: "Регистрация",
+    login_label: "Логин",
+    display_name_label: "Имя профиля",
+    password_label: "Пароль",
+    login_placeholder: "Логин",
+    display_name_placeholder: "Имя профиля",
+    password_placeholder: "Пароль",
+    login_button: "Войти",
+    register_button: "Создать аккаунт",
+    dms_title: "Личные чаты",
+    find_title: "Найти друзей",
+    create_guild_title: "Создать сервер",
+    channels_title: "Каналы",
+    create_channel_title: "Создать канал",
+    invite_title: "Пригласить",
+    settings_title: "Настройки",
+    settings_sub: "Язык, тема, профиль и аватар",
+    settings_display_name: "Имя профиля",
+    settings_language: "Язык",
+    settings_theme: "Тема",
+    settings_accent: "Акцент",
+    save_settings: "Сохранить",
+    close_btn: "Закрыть",
+    find_placeholder: "Логин, имя или ID",
+    find_button: "Найти",
+    guild_name_placeholder: "Название сервера",
+    channel_name_placeholder: "Название канала",
+    invite_placeholder: "Логин или ID",
+    create_button: "Создать",
+    invite_button: "Добавить",
+    no_chats: "Пока нет чатов",
+    no_messages: "Сообщений пока нет",
+    chat_select_title: "Выбери чат",
+    chat_select_sub: "Слева открой диалог или канал",
+    message_placeholder: "Написать сообщение...",
+    send_button: "Отправить",
+    members_title: "Участники",
+    pins_title: "Закрепы",
+    pins_button: "📌 Закрепы",
+    attach_btn: "📎 Файл",
+    authors_sub: "Учебный проект",
+    authors_sub2: "Помощь и код",
+    avatar_pick: "Загрузить аватар",
+    avatar_note: "Квадратная картинка лучше смотрится",
+    theme_dark: "Тёмная",
+    theme_midnight: "Midnight",
+    theme_ocean: "Ocean",
+    theme_violet: "Violet",
+    theme_light: "Светлая",
+    accent_indigo: "Indigo",
+    accent_pink: "Pink",
+    accent_cyan: "Cyan",
+    accent_lime: "Lime",
+    accent_orange: "Orange",
+    owner: "Владелец",
+    admin: "Админ",
+    member: "Участник",
+    role_change: "Роль",
+    delete_btn: "Удалить",
+    pin_btn: "Закрепить",
+    unpin_btn: "Открепить"
+  },
+  en: {
+    language_label: "Language / Язык",
+    lang_ru: "Russian",
+    lang_en: "English",
+    auth_title: "Mesanger",
+    auth_sub: "Chats, servers, pins and files",
+    tab_login: "Login",
+    tab_register: "Register",
+    login_label: "Username",
+    display_name_label: "Display name",
+    password_label: "Password",
+    login_placeholder: "Username",
+    display_name_placeholder: "Display name",
+    password_placeholder: "Password",
+    login_button: "Sign in",
+    register_button: "Create account",
+    dms_title: "Direct messages",
+    find_title: "Find friends",
+    create_guild_title: "Create server",
+    channels_title: "Channels",
+    create_channel_title: "Create channel",
+    invite_title: "Invite",
+    settings_title: "Settings",
+    settings_sub: "Language, theme, profile and avatar",
+    settings_display_name: "Display name",
+    settings_language: "Language",
+    settings_theme: "Theme",
+    settings_accent: "Accent",
+    save_settings: "Save",
+    close_btn: "Close",
+    find_placeholder: "Username, name or ID",
+    find_button: "Search",
+    guild_name_placeholder: "Server name",
+    channel_name_placeholder: "Channel name",
+    invite_placeholder: "Username or ID",
+    create_button: "Create",
+    invite_button: "Add",
+    no_chats: "No chats yet",
+    no_messages: "No messages yet",
+    chat_select_title: "Pick a chat",
+    chat_select_sub: "Open a DM or channel from the left",
+    message_placeholder: "Write a message...",
+    send_button: "Send",
+    members_title: "Members",
+    pins_title: "Pins",
+    pins_button: "📌 Pins",
+    attach_btn: "📎 File",
+    authors_sub: "Learning project",
+    authors_sub2: "Code & help",
+    avatar_pick: "Upload avatar",
+    avatar_note: "Square images look best",
+    theme_dark: "Dark",
+    theme_midnight: "Midnight",
+    theme_ocean: "Ocean",
+    theme_violet: "Violet",
+    theme_light: "Light",
+    accent_indigo: "Indigo",
+    accent_pink: "Pink",
+    accent_cyan: "Cyan",
+    accent_lime: "Lime",
+    accent_orange: "Orange",
+    owner: "Owner",
+    admin: "Admin",
+    member: "Member",
+    role_change: "Role",
+    delete_btn: "Delete",
+    pin_btn: "Pin",
+    unpin_btn: "Unpin"
+  }
+};
+
 const state = {
   token: localStorage.getItem("ms_token") || "",
+  locale: localStorage.getItem("ms_locale") || (navigator.language?.startsWith("ru") ? "ru" : "en"),
   me: null,
-  conversations: [],
-  current: null,
+  guilds: [],
+  dms: [],
+  currentView: "home",
+  currentGuildId: null,
+  currentChat: null,
   socket: null,
-  peers: {},
-  callNames: {},
-  localStream: null,
-  screenStream: null,
-  currentCallKey: null,
-  currentTab: "chats",
+  notificationsAllowed: false,
   lastPingAt: 0,
-  notificationAllowed: false,
-  currentCall: null,
-  incomingCall: null,
-  activeVideoTrack: null,
-  ringtone: null
+  pendingFiles: [],
+  currentPins: []
 };
 
 const el = {
   authScreen: document.getElementById("authScreen"),
   app: document.getElementById("app"),
+  authLang: document.getElementById("authLang"),
   tabLogin: document.getElementById("tabLogin"),
   tabRegister: document.getElementById("tabRegister"),
-  displayNameWrap: document.getElementById("displayNameWrap"),
   authLogin: document.getElementById("authLogin"),
   authDisplayName: document.getElementById("authDisplayName"),
   authPassword: document.getElementById("authPassword"),
+  displayNameWrap: document.getElementById("displayNameWrap"),
   authMainBtn: document.getElementById("authMainBtn"),
   authAltBtn: document.getElementById("authAltBtn"),
   authError: document.getElementById("authError"),
-  logoutBtn: document.getElementById("logoutBtn"),
 
+  homeBtn: document.getElementById("homeBtn"),
+  createGuildBtn: document.getElementById("createGuildBtn"),
+  settingsBtn: document.getElementById("settingsBtn"),
+  logoutBtn: document.getElementById("logoutBtn"),
+  guildRailList: document.getElementById("guildRailList"),
+
+  homeView: document.getElementById("homeView"),
+  guildView: document.getElementById("guildView"),
+  guildTitleHead: document.getElementById("guildTitleHead"),
+
+  meAvatar: document.getElementById("meAvatar"),
   meName: document.getElementById("meName"),
   meInfo: document.getElementById("meInfo"),
 
-  chatList: document.getElementById("chatList"),
+  dmList: document.getElementById("dmList"),
+  emptyDms: document.getElementById("emptyDms"),
   findInput: document.getElementById("findInput"),
   findBtn: document.getElementById("findBtn"),
   findResults: document.getElementById("findResults"),
-  groupNameInput: document.getElementById("groupNameInput"),
-  createGroupBtn: document.getElementById("createGroupBtn"),
-  groupList: document.getElementById("groupList"),
+  guildNameInput: document.getElementById("guildNameInput"),
+  guildCreateBtn2: document.getElementById("guildCreateBtn2"),
+  channelList: document.getElementById("channelList"),
+  channelNameInput: document.getElementById("channelNameInput"),
+  channelCreateBtn: document.getElementById("channelCreateBtn"),
   inviteInput: document.getElementById("inviteInput"),
   inviteBtn: document.getElementById("inviteBtn"),
 
   setDisplayName: document.getElementById("setDisplayName"),
-  setAccent: document.getElementById("setAccent"),
+  setLang: document.getElementById("setLang"),
   setTheme: document.getElementById("setTheme"),
-  setCompact: document.getElementById("setCompact"),
+  setAccent: document.getElementById("setAccent"),
   saveSettingsBtn: document.getElementById("saveSettingsBtn"),
+
+  settingsModal: document.getElementById("settingsModal"),
+  modalDisplayName: document.getElementById("modalDisplayName"),
+  modalLang: document.getElementById("modalLang"),
+  modalTheme: document.getElementById("modalTheme"),
+  modalAccent: document.getElementById("modalAccent"),
+  saveModalSettingsBtn: document.getElementById("saveModalSettingsBtn"),
+  closeSettingsBtn: document.getElementById("closeSettingsBtn"),
+  avatarInput: document.getElementById("avatarInput"),
+  avatarPickBtn: document.getElementById("avatarPickBtn"),
+  avatarPreview: document.getElementById("avatarPreview"),
 
   chatTitle: document.getElementById("chatTitle"),
   chatSub: document.getElementById("chatSub"),
   messages: document.getElementById("messages"),
+  emptyMessages: document.getElementById("emptyMessages"),
   messageInput: document.getElementById("messageInput"),
   sendBtn: document.getElementById("sendBtn"),
+  attachBtn: document.getElementById("attachBtn"),
+  fileInput: document.getElementById("fileInput"),
+  attachmentPreview: document.getElementById("attachmentPreview"),
+  pinsBtn: document.getElementById("pinsBtn"),
 
-  members: document.getElementById("members"),
-  callStage: document.getElementById("callStage"),
-  callSub: document.getElementById("callSub"),
-  localLabel: document.getElementById("localLabel"),
-  localVideo: document.getElementById("localVideo"),
-  remoteVideos: document.getElementById("remoteVideos"),
+  membersList: document.getElementById("membersList"),
+  pinsList: document.getElementById("pinsList"),
 
-  voiceCallBtn: document.getElementById("voiceCallBtn"),
-  videoCallBtn: document.getElementById("videoCallBtn"),
-  screenBtn: document.getElementById("screenBtn"),
-  cameraBtn: document.getElementById("cameraBtn"),
-  micBtn: document.getElementById("micBtn"),
-  hangupBtn: document.getElementById("hangupBtn"),
-
-  incomingCallModal: document.getElementById("incomingCallModal"),
-  incomingCallText: document.getElementById("incomingCallText"),
-  acceptCallBtn: document.getElementById("acceptCallBtn"),
-  rejectCallBtn: document.getElementById("rejectCallBtn")
+  messageActionsMenu: document.getElementById("messageActionsMenu")
 };
+
+function t(key) {
+  return (i18n[state.locale] && i18n[state.locale][key]) || key;
+}
 
 function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
-  headers.set("Content-Type", "application/json");
+  if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
   return fetch(path, { ...options, headers });
 }
 
-function getOutgoingVideoTrack() {
-  return state.screenStream?.getVideoTracks?.()[0]
-    || state.activeVideoTrack
-    || state.localStream?.getVideoTracks?.()[0]
-    || null;
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
+function escapeAttr(str) {
+  return String(str || "").replaceAll('"', "&quot;");
+}
 
-function setAccent(accent) {
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme || "midnight");
+}
+
+function applyAccent(accent) {
   const map = {
     indigo: ["#6677ff", "#8b5cf6"],
     pink: ["#ec4899", "#a855f7"],
@@ -105,54 +271,106 @@ function setAccent(accent) {
   document.documentElement.style.setProperty("--accent2", b);
 }
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme || "midnight");
+function avatarMarkup(user, size = "md") {
+  const initials = (user.displayName || user.login || "U").slice(0, 1).toUpperCase();
+  const url = user.avatarUrl || "";
+  const cls = `avatar avatar-${size}`;
+  if (url) {
+    return `<div class="${cls}"><img src="${escapeAttr(url)}" alt=""></div>`;
+  }
+  return `<div class="${cls}"><span>${escapeHtml(initials)}</span></div>`;
 }
 
-function showError(text) {
-  el.authError.textContent = text || "";
+function setLocale(locale, save = true) {
+  state.locale = locale === "en" ? "en" : "ru";
+  if (save) localStorage.setItem("ms_locale", state.locale);
+  document.documentElement.lang = state.locale;
+  renderLocale();
+  applyCapabilities();
+}
+
+function renderLocale() {
+  document.title = t("auth_title");
+
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    const key = node.dataset.i18n;
+    node.textContent = t(key);
+  });
+
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    const key = node.dataset.i18nPlaceholder;
+    node.placeholder = t(key);
+  });
+
+  el.authLang.value = state.locale;
+  el.setLang.value = state.me?.language || state.locale;
+  el.modalLang.value = state.me?.language || state.locale;
+
+  if (!state.currentChat) {
+    el.chatTitle.textContent = t("chat_select_title");
+    el.chatSub.textContent = t("chat_select_sub");
+  }
+
+  renderHomeLists();
+  renderGuildSidebar();
+  renderMembers();
+  renderPins();
+  renderSettingsFields();
+}
+
+function showAuthError(code) {
+  const map = {
+    login_min: state.locale === "ru" ? "Логин минимум 3 символа" : "Username must be at least 3 characters",
+    password_min: state.locale === "ru" ? "Пароль минимум 4 символа" : "Password must be at least 4 characters",
+    login_taken: state.locale === "ru" ? "Логин уже занят" : "Username is already taken",
+    bad_login: state.locale === "ru" ? "Неверный логин или пароль" : "Wrong username or password"
+  };
+  el.authError.textContent = code ? (map[code] || code) : "";
 }
 
 function switchAuthMode(mode) {
-  const isLogin = mode === "login";
-  el.tabLogin.classList.toggle("active", isLogin);
-  el.tabRegister.classList.toggle("active", !isLogin);
-  el.displayNameWrap.style.display = isLogin ? "none" : "flex";
-  el.authMainBtn.textContent = isLogin ? "Войти" : "Создать аккаунт";
-  el.authAltBtn.textContent = isLogin ? "Создать аккаунт" : "Вернуться ко входу";
-  el.authAltBtn.onclick = () => switchAuthMode(isLogin ? "register" : "login");
-  el.authMainBtn.onclick = isLogin ? login : register;
-  showError("");
+  const loginMode = mode === "login";
+  el.tabLogin.classList.toggle("active", loginMode);
+  el.tabRegister.classList.toggle("active", !loginMode);
+  el.displayNameWrap.style.display = loginMode ? "none" : "flex";
+  el.authMainBtn.textContent = loginMode ? t("login_button") : t("register_button");
+  el.authAltBtn.textContent = loginMode ? t("register_button") : t("tab_login");
+  el.authMainBtn.onclick = loginMode ? login : register;
+  el.authAltBtn.onclick = () => switchAuthMode(loginMode ? "register" : "login");
+  showAuthError("");
 }
 
 async function register() {
-  showError("");
-  const login = el.authLogin.value.trim();
-  const password = el.authPassword.value.trim();
-  const displayName = el.authDisplayName.value.trim();
-
+  showAuthError("");
   const res = await api("/api/register", {
     method: "POST",
-    body: JSON.stringify({ login, password, displayName })
+    body: JSON.stringify({
+      login: el.authLogin.value.trim(),
+      password: el.authPassword.value.trim(),
+      displayName: el.authDisplayName.value.trim(),
+      language: state.locale,
+      theme: "midnight",
+      accent: "indigo"
+    })
   });
-  const data = await res.json();
-  if (!res.ok) return showError(data.error || "Ошибка регистрации");
 
+  const data = await res.json();
+  if (!res.ok) return showAuthError(data.error);
   finishAuth(data.token, data.user);
 }
 
 async function login() {
-  showError("");
-  const login = el.authLogin.value.trim();
-  const password = el.authPassword.value.trim();
-
+  showAuthError("");
   const res = await api("/api/login", {
     method: "POST",
-    body: JSON.stringify({ login, password })
+    body: JSON.stringify({
+      login: el.authLogin.value.trim(),
+      password: el.authPassword.value.trim()
+    })
   });
-  const data = await res.json();
-  if (!res.ok) return showError(data.error || "Ошибка входа");
 
+  const data = await res.json();
+  if (!res.ok) return showAuthError(data.error);
   finishAuth(data.token, data.user);
 }
 
@@ -160,6 +378,7 @@ function finishAuth(token, user) {
   state.token = token;
   state.me = user;
   localStorage.setItem("ms_token", token);
+  setLocale(user.language || state.locale, false);
   openApp();
   askNotificationPermission();
 }
@@ -168,26 +387,13 @@ function openApp() {
   el.authScreen.classList.add("hidden");
   el.app.classList.remove("hidden");
   connectSocket();
-  refreshMe();
-  renderTabs();
-  setThemeFromUser();
   setupDeviceMode();
+  refreshMe();
 }
 
 function setupDeviceMode() {
-  const isTouch = window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 900;
-  document.body.classList.toggle("touch", isTouch);
-}
-
-function setThemeFromUser() {
-  if (!state.me) return;
-  setAccent(state.me.accent || "indigo");
-  applyTheme(state.me.theme || "midnight");
-  el.setDisplayName.value = state.me.displayName || "";
-  el.setAccent.value = state.me.accent || "indigo";
-  el.setTheme.value = state.me.theme || "midnight";
-  el.setCompact.checked = !!state.me.compact;
-  el.localLabel.textContent = state.me.displayName || state.me.login || "Ты";
+  const touch = window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 900;
+  document.body.classList.toggle("touch", touch);
 }
 
 async function refreshMe() {
@@ -196,613 +402,783 @@ async function refreshMe() {
   if (!res.ok) return logout();
 
   state.me = data.user;
-  state.conversations = data.conversations || [];
-  setThemeFromUser();
+  state.guilds = data.guilds || [];
+  state.dms = data.dms || [];
+
+  applyTheme(state.me.theme || "midnight");
+  applyAccent(state.me.accent || "indigo");
 
   el.meName.textContent = `${state.me.displayName} · ${state.me.login}`;
-  el.meInfo.textContent = `ID: ${state.me.id} · ${state.me.online ? "онлайн" : presenceText(state.me.lastSeen)}`;
-  renderChats();
-  renderGroups();
-  renderSettings();
+  el.meInfo.textContent = `${state.me.id} · ${state.me.online ? "online" : presenceText(state.me.lastSeen)}`;
+
+  renderMyAvatar();
+  el.setDisplayName.value = state.me.displayName || "";
+  el.setLang.value = state.me.language || state.locale;
+  el.setTheme.value = state.me.theme || "midnight";
+  el.setAccent.value = state.me.accent || "indigo";
+
+  el.modalDisplayName.value = state.me.displayName || "";
+  el.modalLang.value = state.me.language || state.locale;
+  el.modalTheme.value = state.me.theme || "midnight";
+  el.modalAccent.value = state.me.accent || "indigo";
+
+  renderGuildRail();
+  renderHomeLists();
+  renderGuildSidebar();
   renderMembers();
+  renderPins();
+  renderSettingsFields();
+  applyCapabilities();
 }
 
-function renderTabs() {
-  const railButtons = [...document.querySelectorAll(".rail-btn[data-tab]")];
-  const views = {
-    chats: document.getElementById("tabChats"),
-    find: document.getElementById("tabFind"),
-    groups: document.getElementById("tabGroups"),
-    settings: document.getElementById("tabSettings")
-  };
+function renderMyAvatar() {
+  el.meAvatar.innerHTML = avatarMarkup(state.me, "lg");
+  el.avatarPreview.innerHTML = avatarMarkup(state.me, "xl");
+}
 
-  railButtons.forEach((btn) => {
-    btn.onclick = () => {
-      state.currentTab = btn.dataset.tab;
-      railButtons.forEach((b) => b.classList.toggle("active", b === btn));
-      Object.entries(views).forEach(([k, node]) => {
-        node.classList.toggle("active", k === state.currentTab);
-      });
-    };
+function renderSettingsFields() {
+  if (!state.me) return;
+  el.setDisplayName.value = state.me.displayName || "";
+  el.setLang.value = state.me.language || "ru";
+  el.setTheme.value = state.me.theme || "midnight";
+  el.setAccent.value = state.me.accent || "indigo";
+
+  el.modalDisplayName.value = state.me.displayName || "";
+  el.modalLang.value = state.me.language || "ru";
+  el.modalTheme.value = state.me.theme || "midnight";
+  el.modalAccent.value = state.me.accent || "indigo";
+  renderMyAvatar();
+}
+
+function updateRailActive() {
+  el.homeBtn.classList.toggle("active", state.currentView === "home" && !state.currentGuildId);
+}
+
+function renderGuildRail() {
+  el.guildRailList.innerHTML = "";
+
+  state.guilds.forEach((g) => {
+    const btn = document.createElement("button");
+    btn.className = "rail-btn" + (state.currentGuildId === g.id ? " active" : "");
+    btn.type = "button";
+    btn.textContent = (g.name || "G").slice(0, 1).toUpperCase();
+    btn.title = `${g.name} · ${g.role || ""}`;
+    btn.onclick = () => selectGuild(g.id);
+    el.guildRailList.appendChild(btn);
   });
+
+  updateRailActive();
 }
 
-function renderChats() {
-  el.chatList.innerHTML = "";
-  state.conversations.forEach((c) => {
+function renderHomeLists() {
+  if (state.currentView !== "home") {
+    el.homeView.classList.remove("active");
+    return;
+  }
+  el.homeView.classList.add("active");
+  el.guildView.classList.remove("active");
+
+  el.dmList.innerHTML = "";
+  el.emptyDms.classList.toggle("hidden", state.dms.length > 0);
+
+  state.dms.forEach((d) => {
+    const peer = d.peer;
+    const active = state.currentChat && state.currentChat.scope === "dm" && state.currentChat.peerId === peer.id;
     const item = document.createElement("div");
-    item.className =
-      "item" +
-      (state.current && state.current.type === c.type && state.current.id === c.id ? " active" : "");
-
-    const status = c.type === "dm" && c.peer
-      ? (c.peer.online ? "онлайн" : presenceText(c.peer.lastSeen))
-      : c.subtitle;
-
+    item.className = "item" + (active ? " active" : "");
     item.innerHTML = `
-      <div class="avatar">${c.avatar || "U"}</div>
+      ${avatarMarkup(peer, "sm")}
       <div class="item-main">
-        <div class="item-title">${escapeHtml(c.title)}</div>
-        <div class="item-sub">${escapeHtml(status || "")}</div>
+        <div class="item-title">${escapeHtml(peer.displayName || peer.login)}</div>
+        <div class="item-sub">${escapeHtml(d.preview || (peer.online ? "online" : presenceText(peer.lastSeen)))}</div>
       </div>
-      <div class="badge">${c.type === "dm" ? "DM" : "GRP"}</div>
+      <div class="badge">DM</div>
     `;
-    item.onclick = () => openConversation(c);
-    el.chatList.appendChild(item);
+    item.onclick = () => openDm(peer);
+    el.dmList.appendChild(item);
   });
 }
 
-function renderGroups() {
-  const groups = state.conversations.filter((c) => c.type === "group");
-  el.groupList.innerHTML = "";
-  groups.forEach((g) => {
+function renderGuildSidebar() {
+  if (!state.currentGuildId) {
+    el.homeView.classList.add("active");
+    el.guildView.classList.remove("active");
+    updateRailActive();
+    return;
+  }
+
+  el.homeView.classList.remove("active");
+  el.guildView.classList.add("active");
+
+  const guild = state.guilds.find((g) => g.id === state.currentGuildId);
+  el.guildTitleHead.textContent = guild ? guild.name : "Server";
+
+  el.channelList.innerHTML = "";
+  const channels = guild ? guild.channels || [] : [];
+  channels.forEach((c) => {
+    const active = state.currentChat && state.currentChat.scope === "guild" && state.currentChat.id === c.id;
     const item = document.createElement("div");
-    item.className =
-      "item" +
-      (state.current && state.current.type === g.type && state.current.id === g.id ? " active" : "");
+    item.className = "item" + (active ? " active" : "");
     item.innerHTML = `
       <div class="avatar">#</div>
       <div class="item-main">
-        <div class="item-title">${escapeHtml(g.title)}</div>
-        <div class="item-sub">${escapeHtml(g.subtitle || "")}</div>
+        <div class="item-title">#${escapeHtml(c.name)}</div>
+        <div class="item-sub">${escapeHtml(guild ? guild.name : "")}</div>
       </div>
-      <div class="badge">group</div>
+      <div class="badge">CH</div>
     `;
-    item.onclick = () => openConversation(g);
-    el.groupList.appendChild(item);
+    item.onclick = () => openGuildChannel(state.currentGuildId, c);
+    el.channelList.appendChild(item);
   });
+
+  updateRailActive();
 }
 
-async function openConversation(c) {
-  const sameChat =
-    state.current &&
-    state.current.type === c.type &&
-    state.current.id === c.id;
-
-  if (state.current && !sameChat) {
-    try { socketEmit("leave-chat", state.current); } catch {}
-    stopCall(true);
-  }
-
-  state.current = c;
-  renderChats();
-  renderGroups();
-
-  el.chatTitle.textContent = c.title;
-  el.chatSub.textContent = c.type === "dm"
-    ? c.subtitle
-    : `Групповой чат · ${c.subtitle || ""}`;
-
-  socketEmit("join-chat", c);
-
-  el.callStage.classList.add("hidden");
-  el.messages.style.display = "";
-
-  await loadMessages();
-  await loadMembers();
+async function selectGuild(guildId) {
+  state.currentView = "guild";
+  state.currentGuildId = guildId;
+  state.currentChat = null;
+  state.currentPins = [];
+  clearMessages();
+  renderGuildRail();
+  renderGuildSidebar();
+  el.chatTitle.textContent = state.guilds.find((g) => g.id === guildId)?.name || "Server";
+  el.chatSub.textContent = t("chat_select_sub");
+  await refreshGuildChannels(guildId);
+  await renderMembers();
+  await renderPins();
 }
 
-
-async function loadMessages() {
-  if (!state.current) return;
-  const res = await api(`/api/messages?type=${encodeURIComponent(state.current.type)}&id=${encodeURIComponent(state.current.id)}`);
+async function refreshGuildChannels(guildId) {
+  const res = await api(`/api/guilds/${encodeURIComponent(guildId)}/channels`);
   const data = await res.json();
   if (!res.ok) return;
 
+  const guild = state.guilds.find((g) => g.id === guildId);
+  if (guild) guild.channels = data.channels || [];
+  renderGuildRail();
+  renderGuildSidebar();
+}
+
+async function openDm(peer) {
+  state.currentView = "home";
+  state.currentGuildId = null;
+  state.currentPins = [];
+
+  const res = await api("/api/dm", {
+    method: "POST",
+    body: JSON.stringify({ query: peer.id })
+  });
+  const data = await res.json();
+  if (!res.ok) return;
+
+  state.currentChat = {
+    scope: "dm",
+    id: data.room,
+    peerId: peer.id,
+    title: peer.displayName || peer.login,
+    subtitle: `@${peer.login}`,
+    peer
+  };
+
+  state.socket.emit("join-dm", { peerId: peer.id });
+  await loadMessagesForCurrentChat();
+  renderGuildRail();
+  renderHomeLists();
+  renderGuildSidebar();
+  await renderMembers();
+  await renderPins();
+  updateHeader();
+}
+
+async function openGuildChannel(guildId, channel) {
+  state.currentView = "guild";
+  state.currentGuildId = guildId;
+  state.currentPins = [];
+  state.currentChat = {
+    scope: "guild",
+    id: channel.id,
+    guildId,
+    title: `#${channel.name}`,
+    subtitle: state.guilds.find((g) => g.id === guildId)?.name || "Server",
+    channel
+  };
+
+  state.socket.emit("join-guild-channel", { channelId: channel.id });
+  await loadMessagesForCurrentChat();
+  renderGuildRail();
+  renderGuildSidebar();
+  await renderMembers();
+  await renderPins();
+  updateHeader();
+}
+
+function updateHeader() {
+  if (!state.currentChat) {
+    el.chatTitle.textContent = t("chat_select_title");
+    el.chatSub.textContent = t("chat_select_sub");
+    return;
+  }
+  el.chatTitle.textContent = state.currentChat.title;
+  el.chatSub.textContent = state.currentChat.subtitle || "";
+}
+
+function clearMessages() {
   el.messages.innerHTML = "";
-  (data.messages || []).forEach(renderMessage);
-  scrollMessagesBottom();
+  renderMessagesEmpty();
+}
+
+function renderMessagesEmpty() {
+  const hasMessages = el.messages.querySelectorAll(".msg").length > 0;
+  el.emptyMessages.classList.toggle("hidden", hasMessages);
+}
+
+function formatSize(bytes) {
+  const n = Number(bytes || 0);
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildAttachmentHTML(att) {
+  const isImg = String(att.type || "").startsWith("image/");
+  const name = escapeHtml(att.name || "file");
+  const url = escapeAttr(att.url || "");
+  if (isImg) {
+    return `
+      <a class="attachment" href="${url}" target="_blank" rel="noreferrer">
+        <img src="${url}" alt="">
+        <div class="attachment-info">
+          <div class="attachment-name">${name}</div>
+          <div class="attachment-size">${formatSize(att.size)}</div>
+        </div>
+      </a>
+    `;
+  }
+  return `
+    <a class="attachment" href="${url}" target="_blank" rel="noreferrer">
+      <div class="attachment-info">
+        <div class="attachment-name">📎 ${name}</div>
+        <div class="attachment-size">${formatSize(att.size)}</div>
+      </div>
+    </a>
+  `;
+}
+
+function canModerateCurrentChatMessage(msg) {
+  if (!state.me || !state.currentChat) return false;
+
+  if (state.currentChat.scope === "dm") {
+    return msg.senderId === state.me.id;
+  }
+
+  if (state.currentChat.scope === "guild") {
+    const guild = state.guilds.find((g) => g.id === state.currentGuildId);
+    const role = guild?.role || "member";
+    return msg.senderId === state.me.id || role === "owner" || role === "admin";
+  }
+
+  return false;
+}
+
+function canPinCurrentChatMessage(msg) {
+  return canModerateCurrentChatMessage(msg);
 }
 
 function renderMessage(msg) {
   const div = document.createElement("div");
   div.className = "msg" + (state.me && msg.senderId === state.me.id ? " me" : "");
+  if (msg.deleted) div.classList.add("deleted");
+  div.id = `message-${msg.id}`;
+  div.dataset.msgId = msg.id;
+
   const time = new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const deletedText = state.locale === "ru" ? "Сообщение удалено" : "Message deleted";
+
   div.innerHTML = `
-    <div class="msg-meta">${escapeHtml(msg.senderName)} · ${time}</div>
-    <div class="msg-text">${escapeHtml(msg.text)}</div>
+    <div class="msg-head">
+      <div class="msg-author">
+        ${avatarMarkup({ displayName: msg.senderName, login: msg.senderLogin, avatarUrl: msg.senderAvatar }, "sm")}
+        <span>${escapeHtml(msg.senderName)}</span>
+        ${msg.pinned ? `<span class="pinned-badge">📌 ${escapeHtml(t("pin_btn"))}</span>` : ""}
+      </div>
+      <div class="msg-meta">${time}</div>
+    </div>
+    <div class="msg-text">${msg.deleted ? escapeHtml(deletedText) : escapeHtml(msg.text)}</div>
+    ${msg.attachments && msg.attachments.length ? `<div class="msg-attachments">${msg.attachments.map(buildAttachmentHTML).join("")}</div>` : ""}
+    <div class="message-actions"></div>
   `;
+
+  const actions = div.querySelector(".message-actions");
+  if (!msg.deleted) {
+    if (canPinCurrentChatMessage(msg)) {
+      const pinBtn = document.createElement("button");
+      pinBtn.textContent = msg.pinned ? t("unpin_btn") : t("pin_btn");
+      pinBtn.onclick = () => togglePin(msg.id);
+      actions.appendChild(pinBtn);
+    }
+
+    if (canModerateCurrentChatMessage(msg)) {
+      const delBtn = document.createElement("button");
+      delBtn.textContent = t("delete_btn");
+      delBtn.classList.add("danger");
+      delBtn.onclick = () => deleteMessage(msg.id);
+      actions.appendChild(delBtn);
+    }
+  }
+
   el.messages.appendChild(div);
+  renderMessagesEmpty();
 }
 
-function scrollMessagesBottom() {
+function scrollBottom() {
   el.messages.scrollTop = el.messages.scrollHeight;
 }
 
+async function loadMessagesForCurrentChat() {
+  clearMessages();
+  if (!state.currentChat) return;
+
+  let res;
+  if (state.currentChat.scope === "dm") {
+    res = await api(`/api/messages?scope=dm&peerId=${encodeURIComponent(state.currentChat.peerId)}`);
+  } else {
+    res = await api(`/api/messages?scope=guild&channelId=${encodeURIComponent(state.currentChat.id)}`);
+  }
+
+  const data = await res.json();
+  if (!res.ok) return;
+
+  (data.messages || []).forEach(renderMessage);
+  renderMessagesEmpty();
+  scrollBottom();
+  await renderPins();
+}
+
+async function renderPins() {
+  el.pinsList.innerHTML = "";
+  if (!state.currentChat) return;
+
+  let res;
+  if (state.currentChat.scope === "dm") {
+    res = await api(`/api/pins?scope=dm&peerId=${encodeURIComponent(state.currentChat.peerId)}`);
+  } else {
+    res = await api(`/api/pins?scope=guild&channelId=${encodeURIComponent(state.currentChat.id)}`);
+  }
+
+  const data = await res.json();
+  if (!res.ok) return;
+
+  state.currentPins = data.pins || [];
+  if (!state.currentPins.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = state.locale === "ru" ? "Нет закрепов" : "No pins yet";
+    el.pinsList.appendChild(empty);
+    return;
+  }
+
+  state.currentPins.forEach((p) => {
+    const card = document.createElement("div");
+    card.className = "pin-card";
+    card.innerHTML = `
+      ${avatarMarkup({ displayName: p.senderName, login: p.senderLogin, avatarUrl: p.senderAvatar }, "sm")}
+      <div class="pin-main">
+        <div class="pin-title">📌 ${escapeHtml(p.senderName)}</div>
+        <div class="pin-sub">${escapeHtml(p.deleted ? (state.locale === "ru" ? "Сообщение удалено" : "Message deleted") : p.text || "")}</div>
+        <button class="pin-go" type="button">${escapeHtml(state.locale === "ru" ? "Перейти" : "Go to message")}</button>
+      </div>
+    `;
+    card.querySelector("button").onclick = () => {
+      const target = document.getElementById(`message-${p.id}`);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    el.pinsList.appendChild(card);
+  });
+}
+
 function autoGrowTextarea() {
-  const ta = el.messageInput;
-  ta.style.height = "auto";
-  ta.style.height = Math.min(160, ta.scrollHeight) + "px";
+  el.messageInput.style.height = "auto";
+  el.messageInput.style.height = Math.min(170, el.messageInput.scrollHeight) + "px";
+}
+
+function renderAttachmentPreview() {
+  el.attachmentPreview.innerHTML = "";
+  state.pendingFiles.forEach((f, idx) => {
+    const chip = document.createElement("div");
+    chip.className = "attach-chip";
+    chip.innerHTML = `
+      <span>📎 ${escapeHtml(f.name)}</span>
+      <button type="button">×</button>
+    `;
+    chip.querySelector("button").onclick = () => {
+      state.pendingFiles.splice(idx, 1);
+      renderAttachmentPreview();
+    };
+    el.attachmentPreview.appendChild(chip);
+  });
+}
+
+async function uploadPendingFiles() {
+  if (!state.pendingFiles.length) return [];
+  const fd = new FormData();
+  state.pendingFiles.forEach((file) => fd.append("files", file));
+
+  const res = await api("/api/upload", {
+    method: "POST",
+    body: fd
+  });
+  const data = await res.json();
+  if (!res.ok) return [];
+
+  return data.attachments || [];
 }
 
 async function sendMessage() {
-  if (!state.current) return;
+  if (!state.currentChat) return;
+
   const text = el.messageInput.value.trim();
-  if (!text) return;
+  if (!text && !state.pendingFiles.length) return;
 
-  socketEmit("message:send", {
-    type: state.current.type,
-    id: state.current.id,
-    text
-  });
+  const attachments = await uploadPendingFiles();
 
-  if (state.current.type === "dm") {
-    socketEmit("dm:ensure", { query: state.current.peer?.id || state.current.id });
+  if (state.currentChat.scope === "dm") {
+    state.socket.emit("message:send", {
+      scope: "dm",
+      peerId: state.currentChat.peerId,
+      text,
+      attachments
+    });
+    state.socket.emit("dm:ensure", { query: state.currentChat.peerId });
+  } else {
+    state.socket.emit("message:send", {
+      scope: "guild",
+      channelId: state.currentChat.id,
+      text,
+      attachments
+    });
   }
 
   el.messageInput.value = "";
+  state.pendingFiles = [];
+  renderAttachmentPreview();
   autoGrowTextarea();
 }
 
-
 async function searchUsers() {
   const q = el.findInput.value.trim();
+  el.findResults.innerHTML = "";
+  if (!q) return;
+
   const res = await api(`/api/search?q=${encodeURIComponent(q)}`);
   const users = await res.json();
   if (!res.ok) return;
 
-  el.findResults.innerHTML = "";
   users.forEach((u) => {
     const item = document.createElement("div");
     item.className = "item";
     item.innerHTML = `
-      <div class="avatar">${escapeHtml((u.displayName || u.login).slice(0, 1).toUpperCase())}</div>
+      ${avatarMarkup(u, "sm")}
       <div class="item-main">
         <div class="item-title">${escapeHtml(u.displayName || u.login)}</div>
-        <div class="item-sub">@${escapeHtml(u.login)} · ID ${escapeHtml(u.id)} · ${u.online ? "онлайн" : presenceText(u.lastSeen)}</div>
+        <div class="item-sub">@${escapeHtml(u.login)} · ${escapeHtml(u.id)} · ${u.online ? "online" : presenceText(u.lastSeen)}</div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
-        <button class="small-btn">Чат</button>
-      </div>
+      <div class="badge">${u.isFriend ? "DM" : "User"}</div>
     `;
 
-    const btn = item.querySelector("button");
-    const openDm = async () => {
-      const dm = await api("/api/dm", {
-        method: "POST",
-        body: JSON.stringify({ query: u.id })
-      });
-      const data = await dm.json();
-      if (!dm.ok) return alert(data.error || "Ошибка");
-      await refreshMe();
-
-      const target = state.conversations.find((c) => c.type === "dm" && c.id === data.dmId) || {
-        id: data.dmId,
-        type: "dm",
-        title: u.displayName || u.login,
-        subtitle: `@${u.login}`,
-        avatar: (u.displayName || u.login).slice(0, 1).toUpperCase(),
-        peer: u
-      };
-      openConversation(target);
-    };
-
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      await openDm();
-    };
-
     item.onclick = async () => {
-      await openDm();
+      await openDm(u);
     };
 
     el.findResults.appendChild(item);
   });
 }
 
-async function createGroup() {
-  const name = el.groupNameInput.value.trim();
+async function createGuild() {
+  const name = el.guildNameInput.value.trim();
   if (!name) return;
 
-  const res = await api("/api/groups", {
+  const res = await api("/api/guilds", {
     method: "POST",
     body: JSON.stringify({ name })
   });
   const data = await res.json();
-  if (!res.ok) return alert(data.error || "Ошибка");
+  if (!res.ok) return;
 
-  el.groupNameInput.value = "";
+  el.guildNameInput.value = "";
   await refreshMe();
-  openConversation({
-    id: data.group.id,
-    type: "group",
-    title: data.group.name,
-    subtitle: "1 участников"
-  });
+  const created = data.guild;
+  if (created) {
+    state.currentGuildId = created.id;
+    state.currentView = "guild";
+    renderGuildRail();
+    renderGuildSidebar();
+    const firstChannel = created.channels?.[0];
+    if (firstChannel) await openGuildChannel(created.id, firstChannel);
+  }
 }
 
-async function inviteToCurrentGroup() {
-  if (!state.current || state.current.type !== "group") return alert("Открой групповой чат");
+async function createChannel() {
+  if (!state.currentGuildId) return;
+  const name = el.channelNameInput.value.trim();
+  if (!name) return;
+
+  const res = await api(`/api/guilds/${encodeURIComponent(state.currentGuildId)}/channels`, {
+    method: "POST",
+    body: JSON.stringify({ name })
+  });
+  const data = await res.json();
+  if (!res.ok) return;
+
+  el.channelNameInput.value = "";
+  await refreshGuildChannels(state.currentGuildId);
+  if (data.channel) {
+    await openGuildChannel(state.currentGuildId, data.channel);
+  }
+}
+
+async function inviteToGuild() {
+  if (!state.currentGuildId) return;
   const query = el.inviteInput.value.trim();
   if (!query) return;
 
-  const res = await api(`/api/groups/${state.current.id}/invite`, {
+  const res = await api(`/api/guilds/${encodeURIComponent(state.currentGuildId)}/invite`, {
     method: "POST",
     body: JSON.stringify({ query })
   });
-  const data = await res.json();
-  if (!res.ok) return alert(data.error || "Ошибка");
+  await res.json();
+  if (!res.ok) return;
 
   el.inviteInput.value = "";
-  await loadMembers();
+  await refreshMe();
+  await renderMembers();
+}
+
+async function saveSettings() {
+  const res = await api("/api/settings", {
+    method: "PATCH",
+    body: JSON.stringify({
+      displayName: el.setDisplayName.value.trim(),
+      language: el.setLang.value,
+      theme: el.setTheme.value,
+      accent: el.setAccent.value
+    })
+  });
+
+  const data = await res.json();
+  if (!res.ok) return;
+
+  state.me = data.user;
+  setLocale(state.me.language || "ru", true);
+  applyTheme(state.me.theme || "midnight");
+  applyAccent(state.me.accent || "indigo");
   await refreshMe();
 }
 
-async function loadMembers() {
-  el.members.innerHTML = "";
-  if (!state.current) return;
+function openSettingsModal() {
+  el.modalDisplayName.value = state.me?.displayName || "";
+  el.modalLang.value = state.me?.language || state.locale;
+  el.modalTheme.value = state.me?.theme || "midnight";
+  el.modalAccent.value = state.me?.accent || "indigo";
+  renderMyAvatar();
+  el.settingsModal.classList.remove("hidden");
+}
 
-  if (state.current.type === "dm") {
-    const other = state.conversations.find((c) => c.type === "dm" && c.id === state.current.id);
-    const list = [];
-    if (state.me) {
-      list.push({
-        name: state.me.displayName,
-        login: state.me.login,
-        online: state.me.online,
-        lastSeen: state.me.lastSeen
-      });
-    }
-    if (other && other.peer) {
-      list.push({
-        name: other.peer.displayName || other.peer.login,
-        login: other.peer.login,
-        online: other.peer.online,
-        lastSeen: other.peer.lastSeen
-      });
-    }
+function closeSettingsModal() {
+  el.settingsModal.classList.add("hidden");
+}
 
-    list.forEach((u) => {
+async function saveModalSettings() {
+  const res = await api("/api/settings", {
+    method: "PATCH",
+    body: JSON.stringify({
+      displayName: el.modalDisplayName.value.trim(),
+      language: el.modalLang.value,
+      theme: el.modalTheme.value,
+      accent: el.modalAccent.value
+    })
+  });
+
+  const data = await res.json();
+  if (!res.ok) return;
+
+  state.me = data.user;
+  setLocale(state.me.language || "ru", true);
+  applyTheme(state.me.theme || "midnight");
+  applyAccent(state.me.accent || "indigo");
+  await refreshMe();
+  closeSettingsModal();
+}
+
+async function uploadAvatar(file) {
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("avatar", file);
+
+  const res = await api("/api/avatar", {
+    method: "POST",
+    body: fd
+  });
+  const data = await res.json();
+  if (!res.ok) return alert("Upload failed");
+
+  state.me = data.user;
+  await refreshMe();
+}
+
+async function renderMembers() {
+  el.membersList.innerHTML = "";
+  if (!state.currentChat) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = t("chat_select_sub");
+    el.membersList.appendChild(empty);
+    return;
+  }
+
+  if (state.currentChat.scope === "dm") {
+    const peer = state.currentChat.peer;
+    const items = [
+      {
+        ...state.me,
+        role: "self"
+      },
+      {
+        ...peer,
+        role: "friend"
+      }
+    ];
+
+    items.forEach((u) => {
       const node = document.createElement("div");
-      node.className = "member" + (u.online ? "" : " offline");
+      node.className = "member-card" + (u.online ? "" : " offline");
       node.innerHTML = `
-        <div class="dot"></div>
-        <div>
-          <div>${escapeHtml(u.name)}</div>
-          <div class="item-sub">@${escapeHtml(u.login)} · ${u.online ? "онлайн" : presenceText(u.lastSeen)}</div>
+        ${avatarMarkup(u, "sm")}
+        <div class="member-main">
+          <div class="member-name">${escapeHtml(u.displayName || u.login)} <span class="role-badge">${escapeHtml(u.role === "self" ? "You" : "Friend")}</span></div>
+          <div class="member-sub">@${escapeHtml(u.login)} · ${u.online ? "online" : presenceText(u.lastSeen)}</div>
         </div>
       `;
-      el.members.appendChild(node);
+      el.membersList.appendChild(node);
     });
     return;
   }
 
-  const res = await api(`/api/groups/${state.current.id}/members`);
+  if (state.currentChat.scope === "guild") {
+    const guildId = state.currentGuildId;
+    if (!guildId) return;
+
+    const res = await api(`/api/guilds/${encodeURIComponent(guildId)}/members`);
+    const data = await res.json();
+    if (!res.ok) return;
+
+    const guild = state.guilds.find((g) => g.id === guildId);
+    const myRole = guild?.role || "member";
+    const canEdit = myRole === "owner";
+
+    (data.members || []).forEach((u) => {
+      const node = document.createElement("div");
+      node.className = "member-card" + (u.online ? "" : " offline");
+      const roleText =
+        u.role === "owner" ? t("owner") :
+        u.role === "admin" ? t("admin") :
+        t("member");
+
+      node.innerHTML = `
+        ${avatarMarkup(u, "sm")}
+        <div class="member-main">
+          <div class="member-name">${escapeHtml(u.displayName || u.login)} <span class="role-badge">${escapeHtml(roleText)}</span></div>
+          <div class="member-sub">@${escapeHtml(u.login)} · ${escapeHtml(u.id)} · ${u.online ? "online" : presenceText(u.lastSeen)}</div>
+          ${canEdit && u.role !== "owner" ? `
+            <select class="role-select">
+              <option value="member" ${u.role === "member" ? "selected" : ""}>${escapeHtml(t("member"))}</option>
+              <option value="admin" ${u.role === "admin" ? "selected" : ""}>${escapeHtml(t("admin"))}</option>
+            </select>
+          ` : ""}
+        </div>
+      `;
+
+      const select = node.querySelector("select");
+      if (select) {
+        select.onchange = async () => {
+          await api(`/api/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(u.id)}/role`, {
+            method: "PUT",
+            body: JSON.stringify({ role: select.value })
+          });
+        };
+      }
+
+      el.membersList.appendChild(node);
+    });
+  }
+}
+
+async function renderPins() {
+  el.pinsList.innerHTML = "";
+  if (!state.currentChat) return;
+
+  let res;
+  if (state.currentChat.scope === "dm") {
+    res = await api(`/api/pins?scope=dm&peerId=${encodeURIComponent(state.currentChat.peerId)}`);
+  } else {
+    res = await api(`/api/pins?scope=guild&channelId=${encodeURIComponent(state.currentChat.id)}`);
+  }
+
   const data = await res.json();
   if (!res.ok) return;
 
-  (data.members || []).forEach((u) => {
-    const node = document.createElement("div");
-    node.className = "member" + (u.online ? "" : " offline");
-    node.innerHTML = `
-      <div class="dot"></div>
-      <div>
-        <div>${escapeHtml(u.displayName || u.login)}</div>
-        <div class="item-sub">@${escapeHtml(u.login)} · ${escapeHtml(u.id)} · ${u.online ? "онлайн" : presenceText(u.lastSeen)}</div>
+  state.currentPins = data.pins || [];
+  if (!state.currentPins.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = state.locale === "ru" ? "Нет закрепов" : "No pins yet";
+    el.pinsList.appendChild(empty);
+    return;
+  }
+
+  state.currentPins.forEach((p) => {
+    const card = document.createElement("div");
+    card.className = "pin-card";
+    card.innerHTML = `
+      ${avatarMarkup({ displayName: p.senderName, login: p.senderLogin, avatarUrl: p.senderAvatar }, "sm")}
+      <div class="pin-main">
+        <div class="pin-title">📌 ${escapeHtml(p.senderName)}</div>
+        <div class="pin-sub">${escapeHtml(p.deleted ? (state.locale === "ru" ? "Сообщение удалено" : "Message deleted") : p.text || "")}</div>
+        <button class="pin-go" type="button">${escapeHtml(state.locale === "ru" ? "Перейти" : "Go to message")}</button>
       </div>
     `;
-    el.members.appendChild(node);
+    card.querySelector("button").onclick = () => {
+      const target = document.getElementById(`message-${p.id}`);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    el.pinsList.appendChild(card);
   });
 }
 
-function renderSettings() {
-  if (!state.me) return;
-  el.setDisplayName.value = state.me.displayName || "";
-  el.setAccent.value = state.me.accent || "indigo";
-  el.setTheme.value = state.me.theme || "midnight";
-  el.setCompact.checked = !!state.me.compact;
-}
-
-async function saveSettings() {
-  const payload = {
-    displayName: el.setDisplayName.value.trim(),
-    accent: el.setAccent.value,
-    theme: el.setTheme.value,
-    compact: el.setCompact.checked
-  };
-
-  const res = await api("/api/settings", {
-    method: "PATCH",
-    body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  if (!res.ok) return alert(data.error || "Ошибка");
-
-  state.me = data.user;
-  setThemeFromUser();
-  await refreshMe();
-}
-
-function connectSocket() {
-  if (state.socket) {
-    state.socket.disconnect();
+function applyCapabilities() {
+  const screenOK = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  if (!screenOK) {
+    el.attachBtn.disabled = false;
   }
-
-  state.socket = io({
-    auth: { token: state.token }
-  });
-
-  state.socket.on("connect_error", () => {
-    logout();
-  });
-
-  state.socket.on("friends:refresh", async () => {
-    await refreshMe();
-  });
-
-  state.socket.on("message:new", (msg) => {
-    const isCurrent =
-      state.current &&
-      state.current.type === msg.type &&
-      state.current.id === msg.channelId;
-
-    if (isCurrent) {
-      renderMessage(msg);
-      scrollMessagesBottom();
-      loadMembers();
-    }
-
-    if (!state.me || msg.senderId === state.me.id) return;
-    if (!isCurrent || document.hidden || !document.hasFocus()) {
-      notifyIncomingMessage(msg);
-    }
-  });
-
-  state.socket.on("message:incoming", (msg) => {
-    if (!state.me || msg.senderId === state.me.id) return;
-    const isCurrent =
-      state.current &&
-      state.current.type === msg.type &&
-      state.current.id === msg.channelId;
-
-    if (!isCurrent || document.hidden || !document.hasFocus()) {
-      notifyIncomingMessage(msg);
-    }
-  });
-
-  state.socket.on("call:request:ok", ({ callId }) => {
-  if (state.currentCall) {
-    state.currentCall.callId = callId;
-  }
-});
-
-
-  state.socket.on("presence:update", (user) => {
-    if (state.me && user.id === state.me.id) {
-      state.me.online = user.online;
-      state.me.lastSeen = user.lastSeen;
-      el.meInfo.textContent = `ID: ${state.me.id} · ${state.me.online ? "онлайн" : presenceText(state.me.lastSeen)}`;
-    }
-
-    const found = state.conversations.find((c) => c.type === "dm" && c.peer && c.peer.id === user.id);
-    if (found && found.peer) {
-      found.peer.online = user.online;
-      found.peer.lastSeen = user.lastSeen;
-      renderChats();
-      renderMembers();
-    }
-  });
-
-  state.socket.on("call:incoming", (payload) => {
-    state.incomingCall = payload;
-    showIncomingCall(payload);
-    startRingtone();
-    notifyIncomingCall(payload);
-  });
-
-  state.socket.on("call:accepted", async ({ callId, by }) => {
-    if (!state.currentCall || state.currentCall.callId !== callId) return;
-    stopRingtone();
-    el.callSub.textContent = `${escapeHtml(by.displayName || by.login)} принял звонок`;
-  });
-
-  state.socket.on("call:rejected", ({ callId, by }) => {
-    if (!state.currentCall || state.currentCall.callId !== callId) return;
-    stopRingtone();
-    el.callSub.textContent = `${escapeHtml(by.displayName || by.login)} отклонил звонок`;
-    setTimeout(() => stopCall(false), 800);
-  });
-
-  state.socket.on("call:members", async ({ type, id, members }) => {
-    if (!state.currentCall || state.currentCall.type !== type || state.currentCall.id !== id) return;
-    for (const m of members) {
-      state.callNames[m.id] = m.displayName || m.login || m.userId || m.id;
-      await createPeer(m.id, true);
-    }
-    updateCallButtons();
-  });
-
-  state.socket.on("call:user-joined", async ({ id, displayName, login }) => {
-    if (!state.currentCall) return;
-    state.callNames[id] = displayName || login || id;
-    await createPeer(id, false);
-    updateRemoteLabels();
-  });
-
-  state.socket.on("call:user-left", ({ id }) => {
-    removePeer(id);
-    updateRemoteLabels();
-  });
-
-  state.socket.on("call:signal", async ({ from, data }) => {
-    await handleSignal(from, data);
-  });
 }
 
-function socketEmit(event, payload) {
-  if (!state.socket) return;
-  state.socket.emit(event, payload);
-}
+async function togglePin(messageId) {
+  if (!state.currentChat) return;
 
-async function ensureMedia(kind) {
-  if (state.localStream) {
-    const hasVideo = state.localStream.getVideoTracks().length > 0;
-    if ((kind === "voice" && !hasVideo) || (kind === "video" && hasVideo)) {
-      return state.localStream;
-    }
-    state.localStream.getTracks().forEach((t) => t.stop());
-  }
-
-  const videoTrack = getOutgoingVideoTrack();
-   if (videoTrack) {
-    pc.addTrack(videoTrack, state.localStream || new MediaStream([videoTrack]));
-  }
-
-
-  const constraints = kind === "video"
-    ? { audio: true, video: true }
-    : { audio: true, video: false };
-
-  state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-  el.localVideo.srcObject = state.localStream;
-  return state.localStream;
-}
-
-function showCallStage() {
-  el.callStage.classList.remove("hidden");
-  el.messages.style.display = "none";
-  el.localLabel.textContent = state.me?.displayName || state.me?.login || "Ты";
-}
-
-function hideCallStage() {
-  el.callStage.classList.add("hidden");
-  el.messages.style.display = "";
-}
-
-async function startCall(kind) {
-  if (!state.current) return alert("Сначала открой чат");
-  await ensureMedia(kind);
-  showCallStage();
-
-  state.currentCall = {
-    ...state.current,
-    kind,
-    callId: null,
-    mode: "outgoing"
-  };
-
-  el.callSub.textContent = "Идёт вызов...";
-  updateCallButtons();
-
-  socketEmit("call:request", {
-    type: state.current.type,
-    id: state.current.id,
-    kind
-  });
-
-  socketEmit("call:join", {
-    type: state.current.type,
-    id: state.current.id,
-    callId: null
-  });
-}
-
-
-function updateCallButtons() {
-  const camTrack = state.localStream?.getVideoTracks?.()[0];
-  const micTrack = state.localStream?.getAudioTracks?.()[0];
-
-  if (camTrack) {
-    el.cameraBtn.textContent = camTrack.enabled ? "📷 Камера: вкл" : "📷 Камера: выкл";
+  if (state.currentChat.scope === "dm") {
+    await api(`/api/messages/${encodeURIComponent(messageId)}/pin`, { method: "POST" });
   } else {
-    el.cameraBtn.textContent = "📷 Камера: добавить";
-  }
-
-  if (micTrack) {
-    el.micBtn.textContent = micTrack.enabled ? "🎤 Микрофон: вкл" : "🎤 Микрофон: выкл";
-  } else {
-    el.micBtn.textContent = "🎤 Микрофон";
-  }
-
-  if (state.screenStream) {
-    el.screenBtn.textContent = "🖥 Демка: вкл";
-  } else {
-    el.screenBtn.textContent = "🖥 Показать / скрыть демку";
+    await api(`/api/messages/${encodeURIComponent(messageId)}/pin`, { method: "POST" });
   }
 }
 
-function callKey() {
-  if (!state.current) return "";
-  return `${state.current.type}:${state.current.id}`;
-}
+async function deleteMessage(messageId) {
+  if (!state.currentChat) return;
+  if (!confirm(state.locale === "ru" ? "Удалить сообщение?" : "Delete message?")) return;
 
-function joinCallRoom() {
-  if (!state.current) return;
-  state.currentCallKey = callKey();
-  cleanupPeers();
-  showCallStage();
-  socketEmit("call:join", {
-    type: state.current.type,
-    id: state.current.id,
-    callId: state.currentCall?.callId || null
+  await api(`/api/messages/${encodeURIComponent(messageId)}`, {
+    method: "DELETE"
   });
-}
-
-async function acceptIncomingCall() {
-  const payload = state.incomingCall;
-  if (!payload) return;
-
-  stopRingtone();
-  hideIncomingCall();
-
-  await ensureMedia(payload.kind || "voice");
-  showCallStage();
-
-  state.currentCall = {
-    type: payload.type,
-    id: payload.id,
-    kind: payload.kind,
-    callId: payload.callId,
-    mode: "incoming"
-  };
-
-  el.callSub.textContent = `Звонок от ${payload.caller.displayName || payload.caller.login}`;
-  socketEmit("call:accept", { callId: payload.callId });
-  socketEmit("call:join", {
-    type: payload.type,
-    id: payload.id,
-    callId: payload.callId
-  });
-
-  updateCallButtons();
-}
-
-function rejectIncomingCall() {
-  const payload = state.incomingCall;
-  if (!payload) return;
-  stopRingtone();
-  socketEmit("call:reject", { callId: payload.callId });
-  hideIncomingCall();
-  state.incomingCall = null;
-}
-
-function showIncomingCall(payload) {
-  el.incomingCallText.textContent = `${payload.caller.displayName || payload.caller.login} вызывает вас`;
-  el.incomingCallModal.classList.remove("hidden");
-}
-
-function hideIncomingCall() {
-  el.incomingCallModal.classList.add("hidden");
 }
 
 function startRingtone() {
@@ -814,11 +1190,11 @@ function startRingtone() {
     gain.gain.value = 0.0001;
     gain.connect(ctx.destination);
 
-    let on = false;
+    let flip = false;
     const timer = setInterval(() => {
       const osc = ctx.createOscillator();
       osc.type = "sine";
-      osc.frequency.value = on ? 660 : 880;
+      osc.frequency.value = flip ? 660 : 880;
       osc.connect(gain);
       osc.start();
       gain.gain.setValueAtTime(0.0001, ctx.currentTime);
@@ -827,7 +1203,7 @@ function startRingtone() {
       setTimeout(() => {
         try { osc.stop(); } catch {}
       }, 260);
-      on = !on;
+      flip = !flip;
     }, 420);
 
     state.ringtone = { ctx, timer };
@@ -843,294 +1219,14 @@ function stopRingtone() {
   state.ringtone = null;
 }
 
-async function toggleScreen() {
-  if (!state.currentCall) return alert("Сначала начни звонок");
-
-  if (state.screenStream) {
-    restoreCameraTrack();
-    updateCallButtons();
-    return;
-  }
-
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    alert("Этот браузер на телефоне не поддерживает демонстрацию экрана. На Android Chrome иногда работает, а на iPhone Safari — обычно нет.");
-    return;
-  }
-
-  try {
-    const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    state.screenStream = screen;
-
-    const screenTrack = screen.getVideoTracks()[0];
-    state.activeVideoTrack = screenTrack;
-    el.localVideo.srcObject = screen;
-
-    replaceOutgoingVideoTrack(screenTrack);
-
-    screenTrack.onended = () => {
-      restoreCameraTrack();
-      updateCallButtons();
-    };
-
-    updateCallButtons();
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-function replaceOutgoingVideoTrack(track) {
-  state.activeVideoTrack = track;
-
-  Object.values(state.peers).forEach((pc) => {
-    const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
-    if (sender) sender.replaceTrack(track);
-  });
-}
-
-function restoreCameraTrack() {
-  if (!state.localStream) return;
-
-  const camera = state.localStream.getVideoTracks()[0];
-  if (camera) {
-    state.activeVideoTrack = camera;
-    replaceOutgoingVideoTrack(camera);
-    el.localVideo.srcObject = state.localStream;
-  }
-
-  if (state.screenStream) {
-    state.screenStream.getTracks().forEach((t) => t.stop());
-    state.screenStream = null;
-  }
-
-  updateCallButtons();
-}
-
-
-async function toggleCamera() {
-  if (!state.currentCall) return;
-
-  const tracks = state.localStream?.getVideoTracks?.() || [];
-  if (tracks.length > 0) {
-    tracks[0].enabled = !tracks[0].enabled;
-    updateCallButtons();
-    return;
-  }
-
-  try {
-    const cam = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    const track = cam.getVideoTracks()[0];
-    if (!state.localStream) {
-      state.localStream = new MediaStream();
-    }
-    state.localStream.addTrack(track);
-
-    Object.values(state.peers).forEach((pc) => {
-      pc.addTrack(track, state.localStream);
-    });
-
-    el.localVideo.srcObject = state.localStream;
-    updateCallButtons();
-  } catch (err) {
-    alert("Не удалось включить камеру");
-  }
-}
-
-function toggleMic() {
-  if (!state.currentCall || !state.localStream) return;
-  const videoTrack = getOutgoingVideoTrack();
-if (videoTrack) {
-  pc.addTrack(videoTrack, state.localStream || new MediaStream([videoTrack]));
-}
-
-   const audioTracks = state.localStream ? state.localStream.getAudioTracks() : [];
-    audioTracks.forEach((track) => {
-    pc.addTrack(track, state.localStream);
-  });
-
-
-async function createPeer(remoteId, initiator) {
-  if (state.peers[remoteId]) return state.peers[remoteId];
-  if (!state.localStream) return null;
-
-  const pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" }
-    ]
-  });
-
-  state.peers[remoteId] = pc;
-
-  state.localStream.getTracks().forEach((track) => {
-    pc.addTrack(track, state.localStream);
-  });
-
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      socketEmit("call:signal", {
-        to: remoteId,
-        data: { candidate: e.candidate }
-      });
-    }
-  };
-
-  pc.ontrack = (e) => {
-    attachRemoteStream(remoteId, e.streams[0]);
-  };
-
-  pc.onconnectionstatechange = () => {
-    if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
-      removePeer(remoteId);
-    }
-  };
-
-  if (initiator) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socketEmit("call:signal", {
-      to: remoteId,
-      data: { sdp: pc.localDescription }
-    });
-  }
-
-  return pc;
-}
-
-async function handleSignal(from, data) {
-  const pc = state.peers[from] || await createPeer(from, false);
-  if (!pc) return;
-
-  try {
-    if (data.sdp) {
-      await pc.setRemoteDescription(data.sdp);
-      if (data.sdp.type === "offer") {
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socketEmit("call:signal", {
-          to: from,
-          data: { sdp: pc.localDescription }
-        });
-      }
-    } else if (data.candidate) {
-      await pc.addIceCandidate(data.candidate);
-    }
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-function attachRemoteStream(id, stream) {
-  let tile = document.getElementById(`remote-${id}`);
-  const name = state.callNames[id] || id;
-
-  if (!tile) {
-    tile = document.createElement("div");
-    tile.className = "remote-tile";
-    tile.id = `remote-${id}`;
-    tile.innerHTML = `
-      <div class="remote-name"></div>
-      <video autoplay playsinline></video>
-    `;
-    el.remoteVideos.appendChild(tile);
-  }
-
-  tile.querySelector(".remote-name").textContent = name;
-  tile.querySelector("video").srcObject = stream;
-}
-
-function updateRemoteLabels() {
-  [...el.remoteVideos.querySelectorAll(".remote-name")].forEach((node) => {
-    const tile = node.closest(".remote-tile");
-    if (!tile) return;
-    const id = tile.id.replace("remote-", "");
-    node.textContent = state.callNames[id] || id;
-  });
-}
-
-function removePeer(id) {
-  if (state.peers[id]) {
-    state.peers[id].close();
-    delete state.peers[id];
-  }
-  const tile = document.getElementById(`remote-${id}`);
-  if (tile) tile.remove();
-  delete state.callNames[id];
-}
-
-function cleanupPeers() {
-  Object.keys(state.peers).forEach(removePeer);
-  el.remoteVideos.innerHTML = "";
-  state.callNames = {};
-}
-
-function stopCall(silent = false) {
-  cleanupPeers();
-  if (!silent && state.current) {
-    socketEmit("call:leave", state.current);
-  }
-
-  if (state.screenStream) {
-    state.screenStream.getTracks().forEach((t) => t.stop());
-    state.screenStream = null;
-  }
-  if (state.localStream) {
-    state.localStream.getTracks().forEach((t) => t.stop());
-    state.localStream = null;
-  }
-
-  el.localVideo.srcObject = null;
-  el.callStage.classList.add("hidden");
-  el.messages.style.display = "";
-  state.currentCallKey = null;
-  state.currentCall = null;
-  updateCallButtons();
-}
-
-function logout() {
-  localStorage.removeItem("ms_token");
-  state.token = "";
-  state.me = null;
-  state.conversations = [];
-  state.current = null;
-  stopCall(true);
-  stopRingtone();
-  if (state.socket) state.socket.disconnect();
-  state.socket = null;
-  el.app.classList.add("hidden");
-  el.authScreen.classList.remove("hidden");
-  showError("");
-  switchAuthMode("login");
-}
-
-function escapeHtml(str) {
-  return String(str || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function presenceText(lastSeen) {
-  if (!lastSeen) return "был(а) давно";
-  const diff = Date.now() - lastSeen;
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return "был(а) только что";
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `был(а) ${min} мин назад`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `был(а) ${hr} ч назад`;
-  const days = Math.floor(hr / 24);
-  return `был(а) ${days} дн назад`;
-}
-
 function askNotificationPermission() {
   if (!("Notification" in window)) return;
   if (Notification.permission === "default") {
     Notification.requestPermission().then((perm) => {
-      state.notificationAllowed = perm === "granted";
+      state.notificationsAllowed = perm === "granted";
     });
   } else {
-    state.notificationAllowed = Notification.permission === "granted";
+    state.notificationsAllowed = Notification.permission === "granted";
   }
 }
 
@@ -1159,35 +1255,33 @@ function playNotificationSound() {
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
 
     setTimeout(() => {
-      o1.stop();
-      o2.stop();
-      ctx.close();
+      try { o1.stop(); o2.stop(); ctx.close(); } catch {}
     }, 250);
   } catch {}
 }
 
 function notifyIncomingMessage(msg) {
   playNotificationSound();
-
-  if (state.notificationAllowed && "Notification" in window) {
-    const title = msg.senderName || "Новое сообщение";
-    const body = String(msg.text || "").slice(0, 120);
+  if (state.notificationsAllowed && "Notification" in window) {
     try {
-      new Notification(title, { body, silent: false });
+      new Notification(msg.senderName || "New message", {
+        body: String(msg.deleted ? "" : msg.text || "").slice(0, 120)
+      });
     } catch {}
   }
 }
 
-function notifyIncomingCall(payload) {
-  playNotificationSound();
-  if (state.notificationAllowed && "Notification" in window) {
-    try {
-      new Notification("Входящий звонок", {
-        body: `${payload.caller.displayName || payload.caller.login} вызывает вас`,
-        silent: false
-      });
-    } catch {}
-  }
+function presenceText(lastSeen) {
+  if (!lastSeen) return state.locale === "ru" ? "был(а) давно" : "seen long ago";
+  const diff = Date.now() - lastSeen;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return state.locale === "ru" ? "был(а) только что" : "seen just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return state.locale === "ru" ? `был(а) ${min} мин назад` : `seen ${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return state.locale === "ru" ? `был(а) ${hr} ч назад` : `seen ${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  return state.locale === "ru" ? `был(а) ${days} дн назад` : `seen ${days}d ago`;
 }
 
 function markActivity() {
@@ -1198,69 +1292,313 @@ function markActivity() {
   state.socket.emit("presence:ping");
 }
 
-["mousemove", "keydown", "mousedown", "touchstart", "scroll", "focus"].forEach((evt) => {
-  window.addEventListener(evt, markActivity, { passive: true });
-});
+function connectSocket() {
+  if (state.socket) state.socket.disconnect();
 
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) markActivity();
-});
+  state.socket = io({ auth: { token: state.token } });
 
-function showIncomingCall(payload) {
-  el.incomingCallText.textContent = `${payload.caller.displayName || payload.caller.login} вызывает вас`;
-  el.incomingCallModal.classList.remove("hidden");
+  state.socket.on("connect_error", () => {
+    logout();
+  });
+
+  state.socket.on("dms:refresh", refreshMe);
+  state.socket.on("guilds:refresh", refreshMe);
+
+  state.socket.on("presence:update", (user) => {
+    if (state.me && user.id === state.me.id) {
+      state.me.online = user.online;
+      state.me.lastSeen = user.lastSeen;
+      el.meInfo.textContent = `${state.me.id} · ${state.me.online ? "online" : presenceText(state.me.lastSeen)}`;
+    }
+
+    const dm = state.dms.find((x) => x.peer.id === user.id);
+    if (dm) {
+      dm.peer.online = user.online;
+      dm.peer.lastSeen = user.lastSeen;
+    }
+
+    if (state.currentChat?.scope === "dm" && state.currentChat.peerId === user.id) {
+      state.currentChat.peer.online = user.online;
+      state.currentChat.peer.lastSeen = user.lastSeen;
+      el.chatSub.textContent = `@${state.currentChat.peer.login} · ${state.currentChat.peer.online ? "online" : presenceText(state.currentChat.peer.lastSeen)}`;
+    }
+
+    renderGuildRail();
+    renderHomeLists();
+    renderMembers();
+    renderPins();
+  });
+
+  state.socket.on("message:new", (msg) => {
+    if (!state.currentChat) return;
+
+    if (state.currentChat.scope === "dm") {
+      const room = pairKey(state.me.id, state.currentChat.peerId);
+      if (msg.scope === "dm" && msg.targetId === room) {
+        renderMessage(msg);
+        scrollBottom();
+        renderPins();
+      } else if (msg.senderId !== state.me.id) {
+        notifyIncomingMessage(msg);
+      }
+    }
+
+    if (state.currentChat.scope === "guild") {
+      if (msg.scope === "guild" && msg.targetId === state.currentChat.id) {
+        renderMessage(msg);
+        scrollBottom();
+        renderPins();
+      } else if (msg.senderId !== state.me.id) {
+        notifyIncomingMessage(msg);
+      }
+    }
+
+    refreshMe();
+  });
+
+  state.socket.on("chat:updated", async (payload) => {
+    if (!state.currentChat) return;
+    if (state.currentChat.scope !== payload.scope) return;
+
+    if (payload.scope === "dm" && state.currentChat.peerId) {
+      const room = pairKey(state.me.id, state.currentChat.peerId);
+      if (payload.targetId !== room) return;
+    }
+
+    if (payload.scope === "guild" && state.currentChat.id !== payload.targetId) return;
+
+    await loadMessagesForCurrentChat();
+    await renderPins();
+    await renderMembers();
+    renderHomeLists();
+    renderGuildSidebar();
+  });
+
+  state.socket.on("guild:members:updated", async ({ guildId }) => {
+    if (state.currentGuildId === guildId) {
+      await renderMembers();
+      await renderGuildSidebar();
+      await renderPins();
+    }
+    await refreshMe();
+  });
+
+  state.socket.on("message:push", (msg) => {
+    if (msg.senderId === state.me.id) return;
+    notifyIncomingMessage(msg);
+  });
+
+  state.socket.on("guild:invited", async () => {
+    await refreshMe();
+  });
+
+  state.socket.on("disconnect", () => {});
 }
 
-function hideIncomingCall() {
-  el.incomingCallModal.classList.add("hidden");
+function showSettingsModal() {
+  el.settingsModal.classList.remove("hidden");
+  renderMyAvatar();
 }
 
-el.authMainBtn.onclick = login;
-el.authAltBtn.onclick = () => switchAuthMode("register");
-el.tabLogin.onclick = () => switchAuthMode("login");
-el.tabRegister.onclick = () => switchAuthMode("register");
-el.findBtn.onclick = searchUsers;
-el.findInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") searchUsers();
-});
-el.createGroupBtn.onclick = createGroup;
-el.inviteBtn.onclick = inviteToCurrentGroup;
-el.sendBtn.onclick = sendMessage;
-el.messageInput.addEventListener("input", autoGrowTextarea);
-el.messageInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
+function hideSettingsModal() {
+  el.settingsModal.classList.add("hidden");
+}
+
+function logout() {
+  localStorage.removeItem("ms_token");
+  state.token = "";
+  state.me = null;
+  state.guilds = [];
+  state.dms = [];
+  state.currentChat = null;
+  state.currentGuildId = null;
+  state.currentView = "home";
+  state.pendingFiles = [];
+  state.currentPins = [];
+  stopRingtone();
+  if (state.socket) state.socket.disconnect();
+  state.socket = null;
+  el.app.classList.add("hidden");
+  el.authScreen.classList.remove("hidden");
+  switchAuthMode("login");
+}
+
+function openMessageMenu(msg, x, y) {
+  el.messageActionsMenu.innerHTML = "";
+  el.messageActionsMenu.style.left = `${x}px`;
+  el.messageActionsMenu.style.top = `${y}px`;
+  el.messageActionsMenu.classList.remove("hidden");
+
+  const close = () => el.messageActionsMenu.classList.add("hidden");
+
+  if (canPinCurrentChatMessage(msg)) {
+    const pinBtn = document.createElement("button");
+    pinBtn.textContent = msg.pinned ? t("unpin_btn") : t("pin_btn");
+    pinBtn.onclick = async () => {
+      await togglePin(msg.id);
+      close();
+    };
+    el.messageActionsMenu.appendChild(pinBtn);
   }
-});
-el.saveSettingsBtn.onclick = saveSettings;
-el.logoutBtn.onclick = logout;
 
-el.voiceCallBtn.onclick = () => startCall("voice");
-el.videoCallBtn.onclick = () => startCall("video");
-el.screenBtn.onclick = toggleScreen;
-el.cameraBtn.onclick = toggleCamera;
-el.micBtn.onclick = toggleMic;
-el.hangupBtn.onclick = () => stopCall(false);
+  if (canModerateCurrentChatMessage(msg)) {
+    const delBtn = document.createElement("button");
+    delBtn.textContent = t("delete_btn");
+    delBtn.className = "danger";
+    delBtn.onclick = async () => {
+      await deleteMessage(msg.id);
+      close();
+    };
+    el.messageActionsMenu.appendChild(delBtn);
+  }
 
-el.acceptCallBtn.onclick = acceptIncomingCall;
-el.rejectCallBtn.onclick = rejectIncomingCall;
+  if (!el.messageActionsMenu.children.length) {
+    const none = document.createElement("button");
+    none.textContent = state.locale === "ru" ? "Нет действий" : "No actions";
+    none.disabled = true;
+    el.messageActionsMenu.appendChild(none);
+  }
 
-window.addEventListener("resize", setupDeviceMode);
+  setTimeout(() => {
+    const handler = (ev) => {
+      if (!el.messageActionsMenu.contains(ev.target)) {
+        close();
+        document.removeEventListener("click", handler);
+      }
+    };
+    document.addEventListener("click", handler);
+  }, 0);
+}
+
+function bindUI() {
+  el.authMainBtn.onclick = login;
+  el.authAltBtn.onclick = () => switchAuthMode("register");
+  el.tabLogin.onclick = () => switchAuthMode("login");
+  el.tabRegister.onclick = () => switchAuthMode("register");
+  el.authLang.onchange = () => setLocale(el.authLang.value);
+
+  el.homeBtn.onclick = () => {
+    state.currentView = "home";
+    state.currentGuildId = null;
+    state.currentChat = null;
+    state.currentPins = [];
+    renderGuildRail();
+    renderHomeLists();
+    renderGuildSidebar();
+    clearMessages();
+    updateHeader();
+    renderMembers();
+    renderPins();
+    updateRailActive();
+  };
+
+  el.createGuildBtn.onclick = showCreateGuildHint;
+  el.guildCreateBtn2.onclick = createGuild;
+  el.channelCreateBtn.onclick = createChannel;
+  el.inviteBtn.onclick = inviteToGuild;
+
+  el.findBtn.onclick = searchUsers;
+  el.findInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") searchUsers();
+  });
+
+  el.sendBtn.onclick = sendMessage;
+  el.messageInput.addEventListener("input", autoGrowTextarea);
+  el.messageInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  el.attachBtn.onclick = () => el.fileInput.click();
+  el.fileInput.onchange = () => {
+    state.pendingFiles = Array.from(el.fileInput.files || []);
+    renderAttachmentPreview();
+  };
+
+  el.saveSettingsBtn.onclick = saveSettings;
+  el.settingsBtn.onclick = showSettingsModal;
+  el.closeSettingsBtn.onclick = hideSettingsModal;
+  el.saveModalSettingsBtn.onclick = saveModalSettings;
+  el.avatarPickBtn.onclick = () => el.avatarInput.click();
+  el.avatarInput.onchange = () => uploadAvatar(el.avatarInput.files?.[0]);
+
+  el.logoutBtn.onclick = logout;
+  el.pinsBtn.onclick = () => renderPins();
+
+  el.messageActionsMenu.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => {
+    el.messageActionsMenu.classList.add("hidden");
+  });
+
+  el.messages.addEventListener("contextmenu", (e) => {
+    const card = e.target.closest(".msg");
+    if (!card) return;
+    const msgId = card.dataset.msgId;
+    const msg = (state.currentChat?.scope === "dm" || state.currentChat?.scope === "guild")
+      ? getVisibleMessageById(msgId)
+      : null;
+    if (!msg) return;
+    e.preventDefault();
+    openMessageMenu(msg, e.pageX, e.pageY);
+  });
+
+  window.addEventListener("resize", setupDeviceMode);
+  ["mousemove", "keydown", "mousedown", "touchstart", "scroll", "focus"].forEach((evt) => {
+    window.addEventListener(evt, markActivity, { passive: true });
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) markActivity();
+  });
+}
+
+function getVisibleMessageById(id) {
+  const node = [...el.messages.querySelectorAll(".msg")].find((m) => m.dataset.msgId === id);
+  if (!node) return null;
+
+  const all = [];
+  [...el.messages.querySelectorAll(".msg")].forEach((m) => {
+    const mid = m.dataset.msgId;
+    if (mid) all.push(mid);
+  });
+
+  if (!state.currentChat) return null;
+
+  const cached = state.currentPins.find((p) => p.id === id);
+  if (cached) return cached;
+
+  return null;
+}
+
+function showCreateGuildHint() {
+  el.guildNameInput.focus();
+}
+
+function applyCapabilities() {
+  const screenOK = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  if (!screenOK) {
+    el.attachBtn.disabled = false;
+  }
+}
 
 async function init() {
-  switchAuthMode("login");
+  bindUI();
   applyTheme("midnight");
-  setupDeviceMode();
+  applyAccent("indigo");
+  setLocale(state.locale, false);
+  switchAuthMode("login");
+  applyCapabilities();
 
   if (!state.token) return;
 
   const res = await api("/api/me");
   if (!res.ok) return;
-  const data = await res.json();
 
+  const data = await res.json();
   state.me = data.user;
-  state.conversations = data.conversations || [];
+  state.guilds = data.guilds || [];
+  state.dms = data.dms || [];
   openApp();
 }
 
