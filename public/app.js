@@ -63,7 +63,6 @@ const i18n = {
     owner: "Владелец",
     admin: "Админ",
     member: "Участник",
-    role_change: "Роль",
     delete_btn: "Удалить",
     pin_btn: "Закрепить",
     unpin_btn: "Открепить"
@@ -132,7 +131,6 @@ const i18n = {
     owner: "Owner",
     admin: "Admin",
     member: "Member",
-    role_change: "Role",
     delete_btn: "Delete",
     pin_btn: "Pin",
     unpin_btn: "Unpin"
@@ -225,9 +223,7 @@ const el = {
   pinsBtn: document.getElementById("pinsBtn"),
 
   membersList: document.getElementById("membersList"),
-  pinsList: document.getElementById("pinsList"),
-
-  messageActionsMenu: document.getElementById("messageActionsMenu")
+  pinsList: document.getElementById("pinsList")
 };
 
 function t(key) {
@@ -328,8 +324,12 @@ function showAuthError(code) {
   el.authError.textContent = code ? (map[code] || code) : "";
 }
 
+let authMode = "login";
+
 function switchAuthMode(mode) {
-  const loginMode = mode === "login";
+  authMode = mode === "register" ? "register" : "login";
+  const loginMode = authMode === "login";
+
   el.tabLogin.classList.toggle("active", loginMode);
   el.tabRegister.classList.toggle("active", !loginMode);
   el.displayNameWrap.style.display = loginMode ? "none" : "flex";
@@ -342,6 +342,7 @@ function switchAuthMode(mode) {
 
 async function register() {
   showAuthError("");
+
   const res = await api("/api/register", {
     method: "POST",
     body: JSON.stringify({
@@ -355,13 +356,17 @@ async function register() {
   });
 
   const data = await res.json();
-  if (!res.ok) return showAuthError(data.error);
+  if (!res.ok) {
+    showAuthError(data.error);
+    return;
+  }
 
   finishAuth(data.token, data.user);
 }
 
 async function login() {
   showAuthError("");
+
   const res = await api("/api/login", {
     method: "POST",
     body: JSON.stringify({
@@ -371,26 +376,31 @@ async function login() {
   });
 
   const data = await res.json();
-  if (!res.ok) return showAuthError(data.error);
+  if (!res.ok) {
+    showAuthError(data.error);
+    return;
+  }
 
   finishAuth(data.token, data.user);
 }
 
-function finishAuth(token, user) {
+async function finishAuth(token, user) {
   state.token = token;
   state.me = user;
   localStorage.setItem("ms_token", token);
-  setLocale(user.language || state.locale, false);
-  openApp();
+
+  el.authScreen.classList.add("hidden");
+  el.app.classList.remove("hidden");
+
+  connectSocket();
+  setupDeviceMode();
   askNotificationPermission();
+  await refreshMe();
 }
 
 function openApp() {
   el.authScreen.classList.add("hidden");
   el.app.classList.remove("hidden");
-  connectSocket();
-  setupDeviceMode();
-  refreshMe();
 }
 
 function setupDeviceMode() {
@@ -409,11 +419,13 @@ async function refreshMe() {
 
   applyTheme(state.me.theme || "midnight");
   applyAccent(state.me.accent || "indigo");
+  setLocale(state.me.language || state.locale, false);
 
   el.meName.textContent = `${state.me.displayName} · ${state.me.login}`;
   el.meInfo.textContent = `${state.me.id} · ${state.me.online ? "online" : presenceText(state.me.lastSeen)}`;
 
   renderMyAvatar();
+
   el.setDisplayName.value = state.me.displayName || "";
   el.setLang.value = state.me.language || state.locale;
   el.setTheme.value = state.me.theme || "midnight";
@@ -430,7 +442,6 @@ async function refreshMe() {
   renderMembers();
   renderPins();
   renderSettingsFields();
-  applyCapabilities();
 }
 
 function renderMyAvatar() {
@@ -481,7 +492,7 @@ function renderHomeLists() {
   el.guildView.classList.remove("active");
 
   el.dmList.innerHTML = "";
-  el.emptyDms.classList.toggle("hidden", state.dms.length > 0);
+  el.emptyDms.classList.toggle("hidden", state.dms.length === 0);
 
   state.dms.forEach((d) => {
     const peer = d.peer;
@@ -646,6 +657,7 @@ function buildAttachmentHTML(att) {
   const isImg = String(att.type || "").startsWith("image/");
   const name = escapeHtml(att.name || "file");
   const url = escapeAttr(att.url || "");
+
   if (isImg) {
     return `
       <a class="attachment" href="${url}" target="_blank" rel="noreferrer">
@@ -657,6 +669,7 @@ function buildAttachmentHTML(att) {
       </a>
     `;
   }
+
   return `
     <a class="attachment" href="${url}" target="_blank" rel="noreferrer">
       <div class="attachment-info">
@@ -716,7 +729,9 @@ function renderMessage(msg) {
     if (canPinCurrentChatMessage(msg)) {
       const pinBtn = document.createElement("button");
       pinBtn.textContent = msg.pinned ? t("unpin_btn") : t("pin_btn");
-      pinBtn.onclick = () => togglePin(msg.id);
+      pinBtn.onclick = async () => {
+        await togglePin(msg.id);
+      };
       actions.appendChild(pinBtn);
     }
 
@@ -724,7 +739,9 @@ function renderMessage(msg) {
       const delBtn = document.createElement("button");
       delBtn.textContent = t("delete_btn");
       delBtn.classList.add("danger");
-      delBtn.onclick = () => deleteMessage(msg.id);
+      delBtn.onclick = async () => {
+        await deleteMessage(msg.id);
+      };
       actions.appendChild(delBtn);
     }
   }
@@ -840,11 +857,9 @@ async function searchUsers() {
       </div>
       <div class="badge">${u.isFriend ? "DM" : "User"}</div>
     `;
-
     item.onclick = async () => {
       await openDm(u);
     };
-
     el.findResults.appendChild(item);
   });
 }
@@ -1114,53 +1129,16 @@ function applyCapabilities() {
 async function togglePin(messageId) {
   if (!state.currentChat) return;
   await api(`/api/messages/${encodeURIComponent(messageId)}/pin`, { method: "POST" });
+  await loadMessagesForCurrentChat();
 }
 
 async function deleteMessage(messageId) {
   if (!state.currentChat) return;
   if (!confirm(state.locale === "ru" ? "Удалить сообщение?" : "Delete message?")) return;
-
   await api(`/api/messages/${encodeURIComponent(messageId)}`, {
     method: "DELETE"
   });
-}
-
-function startRingtone() {
-  stopRingtone();
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AudioCtx();
-    const gain = ctx.createGain();
-    gain.gain.value = 0.0001;
-    gain.connect(ctx.destination);
-
-    let flip = false;
-    const timer = setInterval(() => {
-      const osc = ctx.createOscillator();
-      osc.type = "sine";
-      osc.frequency.value = flip ? 660 : 880;
-      osc.connect(gain);
-      osc.start();
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
-      setTimeout(() => {
-        try { osc.stop(); } catch {}
-      }, 260);
-      flip = !flip;
-    }, 420);
-
-    state.ringtone = { ctx, timer };
-  } catch {}
-}
-
-function stopRingtone() {
-  if (!state.ringtone) return;
-  clearInterval(state.ringtone.timer);
-  try {
-    state.ringtone.ctx.close();
-  } catch {}
-  state.ringtone = null;
+  await loadMessagesForCurrentChat();
 }
 
 function askNotificationPermission() {
@@ -1317,35 +1295,16 @@ function connectSocket() {
     renderHomeLists();
     renderGuildSidebar();
   });
-
-  state.socket.on("guild:members:updated", async ({ guildId }) => {
-    if (state.currentGuildId === guildId) {
-      await renderMembers();
-      await renderGuildSidebar();
-      await renderPins();
-    }
-    await refreshMe();
-  });
-
-  state.socket.on("message:push", (msg) => {
-    if (msg.senderId === state.me.id) return;
-    notifyIncomingMessage(msg);
-  });
-
-  state.socket.on("guild:invited", async () => {
-    await refreshMe();
-  });
-
-  state.socket.on("disconnect", () => {});
 }
 
-function showSettingsModal() {
-  el.settingsModal.classList.remove("hidden");
-  renderMyAvatar();
-}
-
-function hideSettingsModal() {
-  el.settingsModal.classList.add("hidden");
+function updateHeader() {
+  if (!state.currentChat) {
+    el.chatTitle.textContent = t("chat_select_title");
+    el.chatSub.textContent = t("chat_select_sub");
+    return;
+  }
+  el.chatTitle.textContent = state.currentChat.title;
+  el.chatSub.textContent = state.currentChat.subtitle || "";
 }
 
 function logout() {
@@ -1359,59 +1318,11 @@ function logout() {
   state.currentView = "home";
   state.pendingFiles = [];
   state.currentPins = [];
-  stopRingtone();
   if (state.socket) state.socket.disconnect();
   state.socket = null;
   el.app.classList.add("hidden");
   el.authScreen.classList.remove("hidden");
   switchAuthMode("login");
-}
-
-function openMessageMenu(msg, x, y) {
-  el.messageActionsMenu.innerHTML = "";
-  el.messageActionsMenu.style.left = `${x}px`;
-  el.messageActionsMenu.style.top = `${y}px`;
-  el.messageActionsMenu.classList.remove("hidden");
-
-  const close = () => el.messageActionsMenu.classList.add("hidden");
-
-  if (canPinCurrentChatMessage(msg)) {
-    const pinBtn = document.createElement("button");
-    pinBtn.textContent = msg.pinned ? t("unpin_btn") : t("pin_btn");
-    pinBtn.onclick = async () => {
-      await togglePin(msg.id);
-      close();
-    };
-    el.messageActionsMenu.appendChild(pinBtn);
-  }
-
-  if (canModerateCurrentChatMessage(msg)) {
-    const delBtn = document.createElement("button");
-    delBtn.textContent = t("delete_btn");
-    delBtn.className = "danger";
-    delBtn.onclick = async () => {
-      await deleteMessage(msg.id);
-      close();
-    };
-    el.messageActionsMenu.appendChild(delBtn);
-  }
-
-  if (!el.messageActionsMenu.children.length) {
-    const none = document.createElement("button");
-    none.textContent = state.locale === "ru" ? "Нет действий" : "No actions";
-    none.disabled = true;
-    el.messageActionsMenu.appendChild(none);
-  }
-
-  setTimeout(() => {
-    const handler = (ev) => {
-      if (!el.messageActionsMenu.contains(ev.target)) {
-        close();
-        document.removeEventListener("click", handler);
-      }
-    };
-    document.addEventListener("click", handler);
-  }, 0);
 }
 
 function bindUI() {
@@ -1436,7 +1347,7 @@ function bindUI() {
     updateRailActive();
   };
 
-  el.createGuildBtn.onclick = createGuild;
+  el.createGuildBtn.onclick = () => el.guildNameInput.focus();
   el.guildCreateBtn2.onclick = createGuild;
   el.channelCreateBtn.onclick = createChannel;
   el.inviteBtn.onclick = inviteToGuild;
@@ -1462,29 +1373,14 @@ function bindUI() {
   };
 
   el.saveSettingsBtn.onclick = saveSettings;
-  el.settingsBtn.onclick = showSettingsModal;
-  el.closeSettingsBtn.onclick = hideSettingsModal;
+  el.settingsBtn.onclick = openSettingsModal;
+  el.closeSettingsBtn.onclick = closeSettingsModal;
   el.saveModalSettingsBtn.onclick = saveModalSettings;
   el.avatarPickBtn.onclick = () => el.avatarInput.click();
   el.avatarInput.onchange = () => uploadAvatar(el.avatarInput.files?.[0]);
 
   el.logoutBtn.onclick = logout;
-  el.pinsBtn.onclick = () => renderPins();
-
-  el.messageActionsMenu.addEventListener("click", (e) => e.stopPropagation());
-  document.addEventListener("click", () => {
-    el.messageActionsMenu.classList.add("hidden");
-  });
-
-  el.messages.addEventListener("contextmenu", (e) => {
-    const card = e.target.closest(".msg");
-    if (!card) return;
-    const msgId = card.dataset.msgId;
-    const msg = getCurrentMessageById(msgId);
-    if (!msg) return;
-    e.preventDefault();
-    openMessageMenu(msg, e.pageX, e.pageY);
-  });
+  el.pinsBtn.onclick = renderPins;
 
   window.addEventListener("resize", setupDeviceMode);
   ["mousemove", "keydown", "mousedown", "touchstart", "scroll", "focus"].forEach((evt) => {
@@ -1495,35 +1391,12 @@ function bindUI() {
   });
 }
 
-function getCurrentMessageById(id) {
-  if (!state.currentChat) return null;
-  const nodes = [...el.messages.querySelectorAll(".msg")];
-  const node = nodes.find((n) => n.dataset.msgId === id);
-  if (!node) return null;
-
-  const found = state.currentPins.find((p) => p.id === id);
-  if (found) return found;
-  return null;
-}
-
-function showCreateGuildHint() {
-  el.guildNameInput.focus();
-}
-
-function applyCapabilities() {
-  const screenOK = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
-  if (!screenOK) {
-    el.attachBtn.disabled = false;
-  }
-}
-
 async function init() {
   bindUI();
   applyTheme("midnight");
   applyAccent("indigo");
   setLocale(state.locale, false);
   switchAuthMode("login");
-  applyCapabilities();
 
   if (!state.token) return;
 
@@ -1535,6 +1408,8 @@ async function init() {
   state.guilds = data.guilds || [];
   state.dms = data.dms || [];
   openApp();
+  connectSocket();
+  await refreshMe();
 }
 
 init();
