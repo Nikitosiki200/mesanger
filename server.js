@@ -3,7 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const multer = require("multer");
 const fs = require("fs");
-const fsPromises = require("fs/promises");
+const fsp = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
 
@@ -12,7 +12,6 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-
 const ROOT = __dirname;
 const UPLOADS_DIR = path.join(ROOT, "uploads");
 const AVATARS_DIR = path.join(UPLOADS_DIR, "avatars");
@@ -99,10 +98,6 @@ function guildRoom(channelId) {
   return `guild:${channelId}`;
 }
 
-function isImage(mime) {
-  return String(mime || "").startsWith("image/");
-}
-
 function publicUser(u) {
   return {
     id: u.id,
@@ -115,6 +110,19 @@ function publicUser(u) {
     online: !!u.online,
     lastSeen: u.lastSeen || Date.now()
   };
+}
+
+function normalizeAttachments(list) {
+  return Array.isArray(list)
+    ? list
+        .map((a) => ({
+          name: String(a.name || "file"),
+          url: String(a.url || ""),
+          size: Number(a.size || 0),
+          type: String(a.type || "")
+        }))
+        .filter((a) => a.url)
+    : [];
 }
 
 function getAuthToken(req) {
@@ -132,6 +140,13 @@ function getUserFromToken(token) {
 
 function getAuthUser(req) {
   return getUserFromToken(getAuthToken(req));
+}
+
+function authRequired(req, res, next) {
+  const user = getAuthUser(req);
+  if (!user) return res.status(401).json({ error: "unauthorized" });
+  req.user = user;
+  next();
 }
 
 function getRole(userId, guildId) {
@@ -184,29 +199,22 @@ function getGuildsFor(userId) {
     .filter((m) => m.userId === userId)
     .map((m) => db.guilds.find((g) => g.id === m.guildId))
     .filter(Boolean)
-    .map((g) => {
-      const role = getRole(userId, g.id);
-      return {
-        id: g.id,
-        name: g.name,
-        ownerId: g.ownerId,
-        role,
-        channels: getGuildChannels(g.id).map((c) => ({
-          id: c.id,
-          guildId: c.guildId,
-          name: c.name
-        }))
-      };
-    });
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      ownerId: g.ownerId,
+      role: getRole(userId, g.id),
+      channels: getGuildChannels(g.id).map((c) => ({
+        id: c.id,
+        guildId: c.guildId,
+        name: c.name
+      }))
+    }));
 }
 
 function getFriends(userId) {
   return db.friendships
-    .filter(
-      (f) =>
-        f.status === "accepted" &&
-        (f.a === userId || f.b === userId)
-    )
+    .filter((f) => f.status === "accepted" && (f.a === userId || f.b === userId))
     .map((f) => {
       const friendId = f.a === userId ? f.b : f.a;
       const friend = db.users.find((u) => u.id === friendId);
@@ -222,24 +230,16 @@ function getDmList(userId) {
       const msgs = db.messages
         .filter((m) => m.scope === "dm" && m.targetId === room && !m.deleted)
         .sort((a, b) => a.createdAt - b.createdAt);
+
       const last = msgs[msgs.length - 1];
       return {
         peer,
         room,
-        preview: last ? last.deleted ? (last.senderId === userId ? "You deleted a message" : "Message deleted") : last.text : "",
+        preview: last ? (last.deleted ? "" : last.text) : "",
         lastMessageAt: last ? last.createdAt : 0
       };
     })
     .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0));
-}
-
-function normalizeAttachments(list) {
-  return Array.isArray(list) ? list.map((a) => ({
-    name: String(a.name || "file"),
-    url: String(a.url || ""),
-    size: Number(a.size || 0),
-    type: String(a.type || "")
-  })).filter((a) => a.url) : [];
 }
 
 function messagePayload(m) {
@@ -294,32 +294,16 @@ function messagesForGuild(channelId) {
 function pinsForDm(userId, peerId) {
   const room = pairKey(userId, peerId);
   return db.messages
-    .filter((m) => m.scope === "dm" && m.targetId === room && m.pinned)
+    .filter((m) => m.scope === "dm" && m.targetId === room && m.pinned && !m.deleted)
     .sort((a, b) => b.createdAt - a.createdAt)
     .map(messagePayload);
 }
 
 function pinsForGuild(channelId) {
   return db.messages
-    .filter((m) => m.scope === "guild" && m.targetId === channelId && m.pinned)
+    .filter((m) => m.scope === "guild" && m.targetId === channelId && m.pinned && !m.deleted)
     .sort((a, b) => b.createdAt - a.createdAt)
     .map(messagePayload);
-}
-
-function getMemberIdsForGuild(guildId) {
-  return db.guildMembers
-    .filter((m) => m.guildId === guildId)
-    .map((m) => m.userId);
-}
-
-function broadcastToGuildMembers(guildId, event, payload) {
-  for (const userId of getMemberIdsForGuild(guildId)) {
-    const sockets = userSockets.get(userId);
-    if (!sockets) continue;
-    for (const sid of sockets) {
-      io.to(sid).emit(event, payload);
-    }
-  }
 }
 
 function broadcastPresence(user) {
@@ -338,24 +322,9 @@ function refreshGuildsFor(userId) {
   for (const sid of sockets) io.to(sid).emit("guilds:refresh");
 }
 
-function refreshCurrentChat(scope, targetId) {
-  if (scope === "dm") {
-    io.to(dmRoom(targetId.a, targetId.b)).emit("chat:updated", { scope, targetId: pairKey(targetId.a, targetId.b) });
-  }
-  if (scope === "guild") {
-    io.to(guildRoom(targetId)).emit("chat:updated", { scope, targetId });
-  }
-}
-
-function roomForMessage(scope, targetId, userId, peerId = null) {
-  if (scope === "dm") return dmRoom(userId, peerId || targetId);
-  if (scope === "guild") return guildRoom(targetId);
-  return "";
-}
-
 async function loadDb() {
   try {
-    const raw = await fsPromises.readFile(DB_FILE, "utf8");
+    const raw = await fsp.readFile(DB_FILE, "utf8");
     db = JSON.parse(raw);
   } catch {
     db = structuredClone(EMPTY_DB);
@@ -383,7 +352,7 @@ async function loadDb() {
 }
 
 async function saveDb() {
-  await fsPromises.writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
+  await fsp.writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
 }
 
 io.use((socket, next) => {
@@ -432,7 +401,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join-guild-channel", ({ channelId }) => {
-    if (!channelId || !isGuildMember(userId, db.channels.find((c) => c.id === channelId)?.guildId)) return;
+    if (!channelId) return;
+    const channel = db.channels.find((c) => c.id === channelId);
+    if (!channel || !isGuildMember(userId, channel.guildId)) return;
     socket.join(guildRoom(channelId));
   });
 
@@ -451,15 +422,17 @@ io.on("connection", (socket) => {
     if (scope === "dm") {
       const peerId = String(payload?.peerId || "");
       if (!peerId || peerId === userId) return;
+
       const peer = db.users.find((u) => u.id === peerId);
       if (!peer) return;
 
-      const existing = db.friendships.find(
+      const exists = db.friendships.find(
         (f) =>
           f.status === "accepted" &&
           ((f.a === userId && f.b === peerId) || (f.a === peerId && f.b === userId))
       );
-      if (!existing) {
+
+      if (!exists) {
         db.friendships.push({
           a: userId,
           b: peerId,
@@ -487,78 +460,15 @@ io.on("connection", (socket) => {
       await saveDb();
 
       io.to(guildRoom(channelId)).emit("message:new", messagePayload(msg));
-      return;
-    }
-  });
-
-  socket.on("message:pin", async ({ scope, peerId, channelId, messageId }) => {
-    const msg = db.messages.find((m) => m.id === messageId);
-    if (!msg) return;
-
-    if (scope === "dm") {
-      if (!peerId) return;
-      const room = pairKey(userId, peerId);
-      if (msg.scope !== "dm" || msg.targetId !== room) return;
-      if (!canPinMessage(userId, msg)) return;
-      msg.pinned = !msg.pinned;
-      await saveDb();
-      io.to(dmRoom(userId, peerId)).emit("chat:updated", { scope: "dm", targetId: room });
-      return;
-    }
-
-    if (scope === "guild") {
-      if (!channelId) return;
-      const channel = db.channels.find((c) => c.id === channelId);
-      if (!channel || msg.scope !== "guild" || msg.targetId !== channelId) return;
-      if (!canPinMessage(userId, msg)) return;
-      msg.pinned = !msg.pinned;
-      await saveDb();
-      io.to(guildRoom(channelId)).emit("chat:updated", { scope: "guild", targetId: channelId });
-    }
-  });
-
-  socket.on("message:delete", async ({ scope, peerId, channelId, messageId }) => {
-    const msg = db.messages.find((m) => m.id === messageId);
-    if (!msg) return;
-
-    if (scope === "dm") {
-      if (!peerId) return;
-      const room = pairKey(userId, peerId);
-      if (msg.scope !== "dm" || msg.targetId !== room) return;
-      if (!canModerateMessage(userId, msg)) return;
-
-      msg.deleted = true;
-      msg.text = "";
-      msg.attachments = [];
-      msg.pinned = false;
-      await saveDb();
-
-      io.to(dmRoom(userId, peerId)).emit("chat:updated", { scope: "dm", targetId: room });
-      refreshDmsFor(userId);
-      refreshDmsFor(peerId);
-      return;
-    }
-
-    if (scope === "guild") {
-      if (!channelId) return;
-      const channel = db.channels.find((c) => c.id === channelId);
-      if (!channel || msg.scope !== "guild" || msg.targetId !== channelId) return;
-      if (!canModerateMessage(userId, msg)) return;
-
-      msg.deleted = true;
-      msg.text = "";
-      msg.attachments = [];
-      msg.pinned = false;
-      await saveDb();
-
-      io.to(guildRoom(channelId)).emit("chat:updated", { scope: "guild", targetId: channelId });
     }
   });
 
   socket.on("disconnect", async () => {
-    const count = Math.max(0, (connectionCounts.get(userId) || 1) - 1);
-    if (count <= 0) connectionCounts.delete(userId);
-    else connectionCounts.set(userId, count);
+    const current = connectionCounts.get(userId) || 0;
+    const next = Math.max(0, current - 1);
+
+    if (next <= 0) connectionCounts.delete(userId);
+    else connectionCounts.set(userId, next);
 
     const sockets = userSockets.get(userId);
     if (sockets) {
@@ -591,23 +501,8 @@ setInterval(async () => {
   if (changed) await saveDb();
 }, 30000);
 
-function authRequired(req, res, next) {
-  const user = getAuthUser(req);
-  if (!user) return res.status(401).json({ error: "unauthorized" });
-  req.user = user;
-  next();
-}
-
 app.post("/api/register", async (req, res) => {
-  const {
-    login,
-    password,
-    displayName,
-    language = "ru",
-    theme = "midnight",
-    accent = "indigo"
-  } = req.body || {};
-
+  const { login, password, displayName, language = "ru", theme = "midnight", accent = "indigo" } = req.body || {};
   const cleanLogin = String(login || "").trim();
   const cleanPassword = String(password || "").trim();
   const cleanName = String(displayName || "").trim();
@@ -691,13 +586,9 @@ app.patch("/api/settings", authRequired, async (req, res) => {
 
 app.post("/api/avatar", authRequired, avatarUpload.single("avatar"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "no_file" });
-
   req.user.avatarUrl = `/uploads/avatars/${req.file.filename}`;
   await saveDb();
-
-  res.json({
-    user: publicUser(req.user)
-  });
+  res.json({ user: publicUser(req.user) });
 });
 
 app.post("/api/upload", authRequired, fileUpload.array("files", 10), async (req, res) => {
@@ -708,7 +599,6 @@ app.post("/api/upload", authRequired, fileUpload.array("files", 10), async (req,
     size: file.size,
     type: file.mimetype
   }));
-
   res.json({ attachments });
 });
 
@@ -755,6 +645,7 @@ app.post("/api/dm", authRequired, async (req, res) => {
       f.status === "accepted" &&
       ((f.a === req.user.id && f.b === target.id) || (f.a === target.id && f.b === req.user.id))
   );
+
   if (!exists) {
     db.friendships.push({
       a: req.user.id,
@@ -782,14 +673,11 @@ app.get("/api/messages", authRequired, (req, res) => {
     const peer = db.users.find((u) => u.id === peerId);
     if (!peer) return res.status(404).json({ error: "not_found" });
 
-    const room = pairKey(req.user.id, peerId);
-    const messages = messagesForDm(req.user.id, peerId);
-
     return res.json({
       scope: "dm",
-      room,
+      room: pairKey(req.user.id, peerId),
       peer: publicUser(peer),
-      messages
+      messages: messagesForDm(req.user.id, peerId)
     });
   }
 
@@ -800,13 +688,11 @@ app.get("/api/messages", authRequired, (req, res) => {
     if (!isGuildMember(req.user.id, channel.guildId)) return res.status(403).json({ error: "no_access" });
 
     const guild = db.guilds.find((g) => g.id === channel.guildId);
-    const messages = messagesForGuild(channelId);
-
     return res.json({
       scope: "guild",
       guild: guild ? { id: guild.id, name: guild.name } : null,
       channel: { id: channel.id, guildId: channel.guildId, name: channel.name },
-      messages
+      messages: messagesForGuild(channelId)
     });
   }
 
@@ -820,10 +706,7 @@ app.get("/api/pins", authRequired, (req, res) => {
     const peerId = String(req.query.peerId || "");
     const peer = db.users.find((u) => u.id === peerId);
     if (!peer) return res.status(404).json({ error: "not_found" });
-
-    return res.json({
-      pins: pinsForDm(req.user.id, peerId)
-    });
+    return res.json({ pins: pinsForDm(req.user.id, peerId) });
   }
 
   if (scope === "guild") {
@@ -832,9 +715,7 @@ app.get("/api/pins", authRequired, (req, res) => {
     if (!channel) return res.status(404).json({ error: "not_found" });
     if (!isGuildMember(req.user.id, channel.guildId)) return res.status(403).json({ error: "no_access" });
 
-    return res.json({
-      pins: pinsForGuild(channelId)
-    });
+    return res.json({ pins: pinsForGuild(channelId) });
   }
 
   res.json({ pins: [] });
@@ -851,6 +732,7 @@ app.post("/api/guilds", authRequired, async (req, res) => {
     ownerId: req.user.id,
     createdAt: Date.now()
   };
+
   db.guilds.push(guild);
   db.guildMembers.push({
     guildId: guild.id,
@@ -865,9 +747,10 @@ app.post("/api/guilds", authRequired, async (req, res) => {
     name: "general",
     createdAt: Date.now()
   };
-  db.channels.push(channel);
 
+  db.channels.push(channel);
   await saveDb();
+
   refreshGuildsFor(req.user.id);
 
   res.json({
@@ -908,12 +791,22 @@ app.post("/api/guilds/:id/channels", authRequired, async (req, res) => {
     name: clean,
     createdAt: Date.now()
   };
+
   db.channels.push(channel);
   await saveDb();
-
-  broadcastToGuildMembers(guildId, "guilds:refresh", {});
+  refreshGuildsFor(req.user.id);
+  broadcastGuildToMembers(guildId, "guilds:refresh", {});
   res.json({ channel });
 });
+
+function broadcastGuildToMembers(guildId, event, payload) {
+  const members = db.guildMembers.filter((m) => m.guildId === guildId).map((m) => m.userId);
+  for (const userId of members) {
+    const sockets = userSockets.get(userId);
+    if (!sockets) continue;
+    for (const sid of sockets) io.to(sid).emit(event, payload);
+  }
+}
 
 app.get("/api/guilds/:id/members", authRequired, (req, res) => {
   const guildId = req.params.id;
@@ -957,7 +850,7 @@ app.post("/api/guilds/:id/invite", authRequired, async (req, res) => {
     });
     await saveDb();
     refreshGuildsFor(target.id);
-    broadcastToGuildMembers(guildId, "guild:members:updated", { guildId });
+    broadcastGuildToMembers(guildId, "guilds:refresh", {});
   }
 
   res.json({ ok: true });
@@ -973,13 +866,11 @@ app.put("/api/guilds/:id/members/:memberId/role", authRequired, async (req, res)
 
   const row = db.guildMembers.find((m) => m.guildId === guildId && m.userId === memberId);
   if (!row) return res.status(404).json({ error: "not_found" });
-
   if (row.role === "owner") return res.status(400).json({ error: "cannot_edit_owner" });
 
   row.role = role;
   await saveDb();
-
-  broadcastToGuildMembers(guildId, "guild:members:updated", { guildId });
+  broadcastGuildToMembers(guildId, "guilds:refresh", {});
   res.json({ ok: true, role });
 });
 
